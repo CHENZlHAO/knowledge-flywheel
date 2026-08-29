@@ -1,0 +1,76 @@
+name: build-release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  edge:
+    strategy:
+      matrix:
+        goos: [windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+    runs-on: ${{ matrix.goos == 'windows' && 'windows-latest' || 'macos-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Build edge agent
+        shell: bash
+        run: |
+          cd knowledge-edge-agent
+          EXT="${{ matrix.goos == 'windows' && '.exe' || '' }}"
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags "-s -w -X main.agentVersion=${GITHUB_REF_NAME}" \
+            -o "knowledge-edge-agent-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: edge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: knowledge-edge-agent/knowledge-edge-agent-*
+
+  center:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build standalone center
+        shell: bash
+        run: |
+          cd knowledge-hub
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --onefile --name knowledge-center --add-data "app/console.html;app" standalone_center.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: center-windows
+          path: knowledge-hub/dist/knowledge-center.exe
+
+  release:
+    needs: [edge, center]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/release
+          find dist -type f -exec cp {} /tmp/release/ \;
+          ls -lh /tmp/release/
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "开箱即用版本：中心端 Windows EXE（knowledge-center.exe，免 Docker）+ 边缘端 Windows/macOS 二进制。中心双击运行后打开 http://127.0.0.1:8000/ ；边缘按 README 配置中心 IP 后运行。" \
+            /tmp/release/knowledge-*
