@@ -1,0 +1,5 @@
+# Optional: enables ORCHESTRATION_MODE=langgraph.
+# The Hub runs the identical pipeline sequentially when this extra is absent,
+# so installing this file is never required for core correctness.
+-r requirements.txt
+langgraph>=0.2.0,<1.0

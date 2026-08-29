@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Secrets & local env (commit *.example only)
+.env
+
+# Local databases
+*.db
+
+# Local object storage / backups
+storage/
+backups/
+
+# Go / Windows build artifacts
+*.exe
+dist/
+
+# Editor/tool probe files
+.codex_write_probe
+
+# Internal AI-tooling working cache (not part of the deliverable)
+.codex-plans/

@@ -1,0 +1,53 @@
+services:
+  hub:
+    environment:
+      MQTT_BRIDGE_API_KEY: ${MQTT_BRIDGE_API_KEY:?set MQTT_BRIDGE_API_KEY in .env}
+
+  emqx:
+    environment:
+      EMQX_LISTENERS__TCP__DEFAULT__ENABLE: "false"
+      EMQX_LISTENERS__WS__DEFAULT__ENABLE: "false"
+      EMQX_LISTENERS__WSS__DEFAULT__ENABLE: "false"
+      EMQX_LISTENERS__SSL__DEFAULT__ENABLE: "true"
+      EMQX_LISTENERS__SSL__DEFAULT__BIND: "0.0.0.0:8883"
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE: /opt/emqx/etc/certs/ca.crt
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE: /opt/emqx/etc/certs/server.crt
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE: /opt/emqx/etc/certs/server.key
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__VERIFY: verify_none
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__FAIL_IF_NO_PEER_CERT: "false"
+      EMQX_AUTHORIZATION__NO_MATCH: deny
+      EMQX_AUTHORIZATION__DENY_ACTION: ignore
+      EMQX_AUTHORIZATION__SOURCES: '[{"type":"file","enable":true,"path":"/opt/emqx/etc/acl.conf"}]'
+      EMQX_AUTHENTICATION: '[{"mechanism":"password_based","backend":"built_in_database","user_id_type":"username","password_hash_algorithm":{"name":"sha256","salt_position":"suffix"}}]'
+    volumes:
+      - ./deploy/emqx/certs:/opt/emqx/etc/certs:ro
+      - ./deploy/emqx/acl.conf:/opt/emqx/etc/acl.conf:ro
+    ports: !override
+      - "8883:8883"
+      - "127.0.0.1:18083:18083"
+
+  mqtt-bridge:
+    build:
+      context: .
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-docker.m.daocloud.io/library/python:3.12-slim}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    env_file: .env
+    environment:
+      MQTT_TLS_ENABLED: "true"
+      MQTT_USERNAME: ${MQTT_USERNAME:-knowledge-hub-status-bridge}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?set MQTT_PASSWORD in .env}
+      MQTT_CA_FILE: /run/mqtt-certs/ca.crt
+      MQTT_CLIENT_CERT_FILE: /run/mqtt-certs/bridge.crt
+      MQTT_CLIENT_KEY_FILE: /run/mqtt-certs/bridge.key
+      MQTT_BRIDGE_API_KEY: ${MQTT_BRIDGE_API_KEY:?set MQTT_BRIDGE_API_KEY in .env}
+      HUB_INTERNAL_URL: http://hub:8000
+    command: ["python", "-m", "app.mqtt_bridge"]
+    volumes:
+      - ./deploy/emqx/certs:/run/mqtt-certs:ro
+    depends_on:
+      emqx:
+        condition: service_started
+      hub:
+        condition: service_started
+    restart: unless-stopped

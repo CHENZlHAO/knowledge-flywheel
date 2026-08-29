@@ -1,0 +1,84 @@
+# Self-contained stock Dify deployment for the knowledge flywheel frontend.
+#
+# This is intentionally separate from the Hub's docker-compose.yml so Dify can
+# be upgraded independently. For production, prefer the authoritative compose
+# from the upstream langgenius/dify repository; this file is a minimal pinned
+# reference with the three Hub integration URLs surfaced as environment vars.
+services:
+  dify-postgres:
+    image: ${POSTGRES_IMAGE:-docker.m.daocloud.io/library/postgres}:${POSTGRES_VERSION:-15-alpine}
+    environment:
+      POSTGRES_DB: dify
+      POSTGRES_USER: dify
+      POSTGRES_PASSWORD: ${DIFY_DB_PASSWORD}
+    volumes:
+      - dify-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dify -d dify"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  dify-redis:
+    image: ${REDIS_IMAGE:-docker.m.daocloud.io/library/redis}:${REDIS_VERSION:-6-alpine}
+    command: ["redis-server", "--requirepass", "${DIFY_REDIS_PASSWORD}"]
+    volumes:
+      - dify-redis-data:/data
+
+  dify-api:
+    image: ${DIFY_IMAGE_PREFIX:-docker.io/langgenius}/dify-api:${DIFY_VERSION:-1.12.0}
+    environment:
+      MODE: api
+      SECRET_KEY: ${DIFY_SECRET_KEY}
+      DB_HOST: dify-postgres
+      DB_USERNAME: dify
+      DB_PASSWORD: ${DIFY_DB_PASSWORD}
+      DB_DATABASE: dify
+      REDIS_HOST: dify-redis
+      REDIS_PASSWORD: ${DIFY_REDIS_PASSWORD}
+      # Hub integration endpoints (set these from the Hub's .env keys).
+      KNOWLEDGE_HUB_SEARCH_URL: ${HUB_INTERNAL_URL}/api/v1/knowledge/search
+      KNOWLEDGE_HUB_SEARCH_KEY: ${SEARCH_API_KEY}
+      KNOWLEDGE_HUB_FLYWHEEL_URL: ${HUB_INTERNAL_URL}/api/v1/integrations/dify/flywheel-events
+      KNOWLEDGE_HUB_FLYWHEEL_KEY: ${FLYWHEEL_INGEST_API_KEY}
+      KNOWLEDGE_HUB_DOWNLOAD_URL: ${HUB_INTERNAL_URL}/api/v1/gateway/files
+      KNOWLEDGE_HUB_DOWNLOAD_KEY: ${DOWNLOAD_API_KEY}
+    depends_on:
+      dify-postgres:
+        condition: service_healthy
+      dify-redis:
+        condition: service_started
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+
+  dify-worker:
+    image: ${DIFY_IMAGE_PREFIX:-docker.io/langgenius}/dify-api:${DIFY_VERSION:-1.12.0}
+    environment:
+      MODE: worker
+      SECRET_KEY: ${DIFY_SECRET_KEY}
+      DB_HOST: dify-postgres
+      DB_USERNAME: dify
+      DB_PASSWORD: ${DIFY_DB_PASSWORD}
+      DB_DATABASE: dify
+      REDIS_HOST: dify-redis
+      REDIS_PASSWORD: ${DIFY_REDIS_PASSWORD}
+    depends_on:
+      dify-postgres:
+        condition: service_healthy
+      dify-redis:
+        condition: service_started
+    restart: unless-stopped
+
+  dify-web:
+    image: ${DIFY_IMAGE_PREFIX:-docker.io/langgenius}/dify-web:${DIFY_VERSION:-1.12.0}
+    environment:
+      CONSOLE_API_URL: ""
+      APP_API_URL: ""
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  dify-postgres-data:
+  dify-redis-data:
