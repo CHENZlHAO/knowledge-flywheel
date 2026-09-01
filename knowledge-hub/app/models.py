@@ -89,6 +89,7 @@ class FileRecord(Base):
     alive: Mapped[bool] = mapped_column(Boolean, default=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    category: Mapped[str] = mapped_column(String(128), default="未分类")
     source_node_id: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -136,6 +137,7 @@ class DocumentChunk(Base):
     embedding_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     embedding_status: Mapped[str] = mapped_column(String(32), default="pending")
     embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hit_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("file_id", "chunk_index", name="uq_document_chunk_position"),)
 
@@ -211,19 +213,38 @@ class Alert(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
-class FlywheelEvent(Base):
-    __tablename__ = "flywheel_events"
+class RetrievalLog(Base):
+    """一次对知识库的查询：是否命中了参考片段。供热度加权与待添加清单使用。"""
+    __tablename__ = "retrieval_logs"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    event_type: Mapped[str] = mapped_column(String(32), index=True)
     query: Mapped[str] = mapped_column(Text)
-    normalized_query: Mapped[str] = mapped_column(Text, index=True)
-    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    result_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    actor: Mapped[str] = mapped_column(String(128), default="anonymous")
-    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    normalized_query: Mapped[str] = mapped_column(String(255), index=True)
+    hit: Mapped[bool] = mapped_column(Boolean, default=False)
+    chunk_id: Mapped[int | None] = mapped_column(ForeignKey("document_chunks.id"), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="local")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GapItem(Base):
+    """待添加清单：常问但知识库未命中的问题，由定期汇总生成。"""
+    __tablename__ = "gap_items"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    normalized_query: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    ask_count: Mapped[int] = mapped_column(Integer, default=0)
+    no_hit_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SettingsOverride(Base):
+    """后台配置总控台写入的运行时配置覆盖（优先于环境变量，密钥不回显明文）。"""
+    __tablename__ = "settings_overrides"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    value: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class ApiKey(Base):

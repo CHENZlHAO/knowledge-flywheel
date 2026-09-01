@@ -4,12 +4,13 @@ import re
 import math
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func, select, text
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.orm import Session
 from .config import settings
-from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, AuditLog, RemoteCommand, Alert, FlywheelEvent
+from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, AuditLog, RemoteCommand, Alert, RetrievalLog, GapItem
 from .embeddings import embed_text
 from . import dispatcher as _task_dispatcher  # registers post-commit task publication hooks
+from .settings_store import get_effective_setting
 
 
 TASK_TRANSITIONS = {
@@ -27,66 +28,69 @@ def _normalize_query(query: str) -> str:
     return "".join(query.casefold().split())
 
 
-def _record_flywheel_event(db: Session, *, idempotency_key: str, event_type: str, query: str, actor: str, rating: int | None = None, result_count: int | None = None, comment: str | None = None, metadata: dict | None = None) -> FlywheelEvent:
-    existing = db.scalars(select(FlywheelEvent).where(FlywheelEvent.idempotency_key == idempotency_key)).first()
-    if existing is not None:
-        return existing
-    event = FlywheelEvent(idempotency_key=idempotency_key, event_type=event_type, query=query, normalized_query=_normalize_query(query), rating=rating, result_count=result_count, comment=comment, actor=actor, metadata_json=json.dumps(metadata or {}, ensure_ascii=False))
-    db.add(event)
+def record_retrieval(db: Session, *, query: str, hit: bool, chunk_ids: list[int] | None = None, source: str = "local") -> RetrievalLog:
+    """记录一次检索：是否命中参考片段；命中时累加热门片段的 hit_count。"""
+    log = RetrievalLog(query=query, normalized_query=_normalize_query(query), hit=hit, source=source)
+    db.add(log)
+    if hit and chunk_ids:
+        db.execute(
+            update(DocumentChunk)
+            .where(DocumentChunk.id.in_(chunk_ids))
+            .values(hit_count=DocumentChunk.hit_count + 1)
+        )
     db.commit()
-    db.refresh(event)
-    return event
+    db.refresh(log)
+    return log
 
 
-def record_flywheel_feedback(db: Session, data) -> FlywheelEvent:
-    return _record_flywheel_event(db, idempotency_key=data.idempotency_key, event_type="feedback", query=data.query, rating=data.rating, comment=data.comment, actor=data.actor, metadata=data.metadata)
-
-
-def record_flywheel_retrieval(db: Session, data) -> FlywheelEvent:
-    return _record_flywheel_event(db, idempotency_key=data.idempotency_key, event_type="retrieval", query=data.query, result_count=data.result_count, actor=data.actor, metadata=data.metadata)
-
-
-def aggregate_flywheel_gaps(db: Session, limit: int = 50) -> list[dict]:
-    rows = db.scalars(select(FlywheelEvent).order_by(FlywheelEvent.created_at, FlywheelEvent.id)).all()
-    grouped: dict[str, dict] = {}
-    for event in rows:
-        item = grouped.setdefault(event.normalized_query, {"query": event.query, "normalized_query": event.normalized_query, "retrieval_count": 0, "no_result_count": 0, "negative_feedback_count": 0, "positive_feedback_count": 0, "score": 0, "last_seen_at": event.created_at})
-        item["last_seen_at"] = max(item["last_seen_at"], event.created_at)
-        if event.event_type == "retrieval":
-            item["retrieval_count"] += 1
-            if event.result_count == 0:
-                item["no_result_count"] += 1
-                item["score"] += 2
-        elif event.event_type == "feedback":
-            if event.rating is not None and event.rating <= 2:
-                item["negative_feedback_count"] += 1
-                item["score"] += 1
-            elif event.rating is not None and event.rating >= 4:
-                item["positive_feedback_count"] += 1
-    return sorted(grouped.values(), key=lambda item: (-item["score"], -item["no_result_count"], item["normalized_query"]))[:limit]
-
-
-def create_flywheel_proposal(db: Session, query: str) -> Proposal:
-    normalized = _normalize_query(query)
-    gap = next((item for item in aggregate_flywheel_gaps(db, 200) if item["normalized_query"] == normalized), None)
-    if gap is None:
-        raise ValueError("flywheel gap not found")
-    title = f"知识缺口优化：{gap['query'][:180]}"
-    existing = db.scalars(
-        select(Proposal).where(
-            Proposal.kind == "flywheel_optimization",
-            Proposal.title == title,
-            Proposal.status == "pending",
-        ).order_by(Proposal.created_at.desc())
-    ).first()
-    if existing is not None:
-        return existing
-    body = json.dumps({"source": "deterministic_flywheel_aggregation", "gap": gap, "human_review_required": True}, ensure_ascii=False, default=str)
-    proposal = Proposal(kind="flywheel_optimization", title=title, body=body, created_by="flywheel")
-    db.add(proposal)
+def run_gap_summary(db: Session, window_hours: float = 24.0) -> int:
+    """定期汇总：把统计窗口内『未命中参考』的检索聚合成待添加清单项。"""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    rows = db.execute(
+        select(
+            RetrievalLog.normalized_query,
+            func.count(RetrievalLog.id),
+            func.sum(case((RetrievalLog.hit.is_(False), 1), else_=0)),
+        )
+        .where(RetrievalLog.created_at >= cutoff)
+        .group_by(RetrievalLog.normalized_query)
+    ).all()
+    updated = 0
+    for normalized, ask_count, no_hit in rows:
+        if not no_hit:
+            continue  # 只有「未命中参考」的问题才进入待添加清单
+        item = db.scalars(select(GapItem).where(GapItem.normalized_query == normalized)).first()
+        if item is None:
+            item = GapItem(normalized_query=normalized, ask_count=int(ask_count), no_hit_count=int(no_hit or 0), status="open")
+            db.add(item)
+        else:
+            item.ask_count += int(ask_count)
+            item.no_hit_count += int(no_hit or 0)
+            item.last_seen_at = datetime.now(timezone.utc)
+        updated += 1
     db.commit()
-    db.refresh(proposal)
-    return proposal
+    return updated
+
+
+def list_gap_items(db: Session, status: str | None = None, limit: int = 200) -> list[GapItem]:
+    query = select(GapItem).order_by(GapItem.no_hit_count.desc(), GapItem.last_seen_at.desc())
+    if status:
+        query = query.where(GapItem.status == status)
+    return db.scalars(query.limit(limit)).all()
+
+
+def update_gap_item_status(db: Session, item_id: int, status: str, note: str | None = None) -> GapItem:
+    item = db.get(GapItem, item_id)
+    if item is None:
+        raise ValueError("gap item not found")
+    if status not in {"open", "added", "ignored"}:
+        raise ValueError("invalid gap status")
+    item.status = status
+    if note is not None:
+        item.note = note
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 def _cosine(left: list[float], right: list[float]) -> float:
@@ -95,27 +99,44 @@ def _cosine(left: list[float], right: list[float]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
-def search_knowledge(db: Session, query: str, *, top_k: int, idempotency_key: str | None, actor: str) -> dict:
+def search_knowledge(db: Session, query: str, *, top_k: int, idempotency_key: str | None, actor: str, category: str | None = None) -> dict:
     if not query.strip():
         raise ValueError("query must not be blank")
     embedding = embed_text(query)
+    boost_enabled = bool(get_effective_setting(db, "boost_enabled", settings.boost_enabled))
+    boost_weight = float(get_effective_setting(db, "boost_weight", settings.boost_weight) or 0)
+
+    def apply_boost(base: float, hit_count: int) -> float:
+        if not boost_enabled or not hit_count:
+            return base
+        # 热度加权：检索频率越高，排序加分越多（log 缩放，封顶 1.0）
+        return min(1.0, base + boost_weight * math.log1p(hit_count) / 10.0)
+
     if db.bind is not None and db.bind.dialect.name == "postgresql":
         vector_literal = "[" + ",".join(format(value, ".9g") for value in embedding.vector) + "]"
         rows = db.execute(text("""
-            SELECT f.id AS file_id, f.path, f.file_hash, f.version, dc.id AS chunk_id,
-                   dc.chunk_index, dc.content, dc.embedding_provider, dc.embedding_status,
+            SELECT f.id AS file_id, f.path, f.category, f.file_hash, f.version, dc.id AS chunk_id,
+                   dc.chunk_index, dc.content, dc.embedding_provider, dc.embedding_status, dc.hit_count,
                    1 - (dc.embedding <=> CAST(:query_vector AS vector)) AS score
             FROM document_chunks dc JOIN files f ON f.id = dc.file_id
             WHERE f.alive = true AND f.file_hash = dc.file_hash AND dc.embedding IS NOT NULL
+              AND (:category IS NULL OR f.category = :category)
             ORDER BY dc.embedding <=> CAST(:query_vector AS vector), f.id, dc.chunk_index
             LIMIT :top_k
-        """), {"query_vector": vector_literal, "top_k": top_k}).mappings().all()
-        hits = [{**dict(row), "score": round(float(row["score"]), 6)} for row in rows]
+        """), {"query_vector": vector_literal, "top_k": top_k, "category": category}).mappings().all()
+        hits = []
+        for row in rows:
+            base = float(row["score"])
+            boosted = apply_boost(base, int(row["hit_count"] or 0))
+            hits.append({**dict(row), "score": round(boosted, 6)})
     else:
+        conditions = [FileRecord.alive.is_(True), FileRecord.file_hash == DocumentChunk.file_hash, DocumentChunk.embedding.is_not(None)]
+        if category:
+            conditions.append(FileRecord.category == category)
         rows = db.execute(
             select(DocumentChunk, FileRecord)
             .join(FileRecord, FileRecord.id == DocumentChunk.file_id)
-            .where(FileRecord.alive.is_(True), FileRecord.file_hash == DocumentChunk.file_hash, DocumentChunk.embedding.is_not(None))
+            .where(*conditions)
         ).all()
         scored = []
         for chunk, record in rows:
@@ -125,17 +146,17 @@ def search_knowledge(db: Session, query: str, *, top_k: int, idempotency_key: st
                     vector = json.loads(vector)
                 except json.JSONDecodeError:
                     continue
-            scored.append((_cosine(embedding.vector, list(vector)), chunk, record))
+            base = _cosine(embedding.vector, list(vector))
+            scored.append((apply_boost(base, chunk.hit_count or 0), chunk, record))
         scored.sort(key=lambda item: (-item[0], item[1].file_id, item[1].chunk_index))
         hits = [{
-            "file_id": record.id, "path": record.path, "file_hash": record.file_hash,
+            "file_id": record.id, "path": record.path, "category": record.category, "file_hash": record.file_hash,
             "version": record.version, "chunk_id": chunk.id, "chunk_index": chunk.chunk_index,
-            "content": chunk.content, "score": round(score, 6),
+            "content": chunk.content, "score": round(score, 6), "hit_count": chunk.hit_count,
             "embedding_provider": chunk.embedding_provider, "embedding_status": chunk.embedding_status,
         } for score, chunk, record in scored[:top_k]]
-    key = idempotency_key or f"search:{uuid4()}"
-    event = record_flywheel_retrieval(db, type("Retrieval", (), {"idempotency_key": key, "query": query, "result_count": len(hits), "actor": actor, "metadata": {"embedding_provider": embedding.provider, "embedding_status": embedding.status, "top_k": top_k}})())
-    return {"query": query, "count": len(hits), "embedding_provider": embedding.provider, "embedding_status": embedding.status, "results": hits, "retrieval_event_id": event.id}
+    log = record_retrieval(db, query=query, hit=bool(hits), chunk_ids=[h["chunk_id"] for h in hits], source="local")
+    return {"query": query, "count": len(hits), "embedding_provider": embedding.provider, "embedding_status": embedding.status, "results": hits, "retrieval_log_id": log.id}
 
 
 def _upsert_alert(db: Session, *, fingerprint: str, severity: str, kind: str,
@@ -261,6 +282,7 @@ def report_file(db: Session, data) -> FileRecord:
         existing.size_bytes = data.size_bytes
         existing.alive = True
         existing.last_seen_at = now
+        existing.category = getattr(data, "category", "未分类") or "未分类"
         task_key = f"file-register:{existing.id}:{existing.file_hash}"
         task = db.scalars(select(Task).where(Task.idempotency_key == task_key)).first()
         parse_task = db.scalars(select(Task).where(Task.idempotency_key == f"file-parse:{existing.id}:{existing.file_hash}")).first()
@@ -295,7 +317,7 @@ def report_file(db: Session, data) -> FileRecord:
             prior.alive = False
             prior.status = "superseded"
             db.add(AuditLog(actor=data.node_id, action="file.superseded", resource_type="file", resource_id=str(prior.id), detail=json.dumps({"new_file_hash": data.file_hash}, ensure_ascii=False)))
-    record = FileRecord(path=data.path, file_hash=data.file_hash, size_bytes=data.size_bytes, source_node_id=data.node_id, alive=True, last_seen_at=now, version=next_version)
+    record = FileRecord(path=data.path, file_hash=data.file_hash, size_bytes=data.size_bytes, source_node_id=data.node_id, alive=True, last_seen_at=now, version=next_version, category=getattr(data, "category", "未分类") or "未分类")
     db.add(record)
     db.flush()
     db.add(Task(
@@ -626,6 +648,15 @@ def execute_task_payload(db: Session, task: Task) -> dict:
             chunk.embedded_at = datetime.now(timezone.utc)
             providers.add(result.provider)
         return {"execution": "file_embed", "file_id": record.id, "file_hash": record.file_hash, "chunks": len(chunks), "providers": sorted(providers), "status": "degraded" if any(item != "ollama" for item in providers) else "ready"}
+    if task.kind == "dify_ingest":
+        from . import dify_client  # local import keeps the adapter optional
+
+        file_id = int(payload.get("file_id"))
+        record = db.get(FileRecord, file_id)
+        if record is None:
+            raise ValueError(f"file record not found: {file_id}")
+        result = dify_client.ingest_file_to_dify(db, file_id)
+        return {"execution": "dify_ingest", "file_id": file_id, **result}
     if task.kind == "replica_repair":
         file_id = payload.get("file_id")
         expected_hash = payload.get("file_hash")

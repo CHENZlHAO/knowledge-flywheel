@@ -1,4 +1,4 @@
-.PHONY: setup test test-go syntax compose-config acceptance-smoke build-edge build-all deploy-center init-production inspect-production
+.PHONY: setup test test-go syntax compose-config acceptance-smoke build-edge build-all build-mac-center deploy-center init-production inspect-production
 
 setup:
 	./scripts/setup-python.sh
@@ -24,6 +24,9 @@ build-edge:
 build-all:
 	./scripts/build-all.sh $(VERSION)
 
+build-mac-center:
+	./scripts/build-mac-center.sh
+
 deploy-center:
 	./scripts/deploy-center.sh
 
@@ -33,4 +36,4 @@ init-production:
 inspect-production:
 	./scripts/inspect-production.sh
 
-VERSION ?= 0.1.0
+VERSION ?= 0.2.0

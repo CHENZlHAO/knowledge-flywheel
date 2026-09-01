@@ -22,6 +22,7 @@ class FileReport(BaseModel):
     path: str = Field(min_length=1, max_length=1024)
     file_hash: str = Field(min_length=8, max_length=128)
     size_bytes: int = Field(ge=0)
+    category: str = Field(default="未分类", max_length=128)
 
 
 class FileContentUpload(BaseModel):
@@ -75,27 +76,26 @@ class MobileCommandAck(BaseModel):
     error: str | None = None
 
 
-class FlywheelFeedbackCreate(BaseModel):
-    idempotency_key: str = Field(min_length=1, max_length=255)
-    query: str = Field(min_length=1, max_length=4000)
-    rating: int = Field(ge=1, le=5)
-    comment: str | None = Field(default=None, max_length=4000)
-    actor: str = Field(default="anonymous", min_length=1, max_length=128)
-    metadata: dict = Field(default_factory=dict)
-
-
-class FlywheelRetrievalCreate(BaseModel):
-    idempotency_key: str = Field(min_length=1, max_length=255)
-    query: str = Field(min_length=1, max_length=4000)
-    result_count: int = Field(ge=0)
-    actor: str = Field(default="system", min_length=1, max_length=128)
-    metadata: dict = Field(default_factory=dict)
-
-
 class KnowledgeSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=50)
     idempotency_key: str | None = Field(default=None, max_length=255)
+    category: str | None = Field(default=None, max_length=128)
+
+
+class RagChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class GapStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(open|added|ignored)$")
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ConfigUpdate(BaseModel):
+    key: str = Field(min_length=1, max_length=64)
+    value: str = Field(default="", max_length=4096)
 
 
 class ApiKeyCreate(BaseModel):
@@ -115,13 +115,3 @@ class PipelineRunRequest(BaseModel):
     file_hash: str = Field(min_length=8, max_length=128)
     content: str | None = Field(default=None, max_length=52_428_800)
     idempotency_key: str = Field(min_length=1, max_length=255)
-
-
-class DifyFlywheelEvent(BaseModel):
-    event_type: str = Field(pattern="^(retrieval|feedback)$")
-    idempotency_key: str = Field(min_length=1, max_length=255)
-    query: str = Field(min_length=1, max_length=4000)
-    result_count: int | None = Field(default=None, ge=0)
-    rating: int | None = Field(default=None, ge=1, le=5)
-    comment: str | None = Field(default=None, max_length=4000)
-    metadata: dict = Field(default_factory=dict)

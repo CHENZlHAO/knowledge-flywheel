@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     download_api_key: str = ""
     max_search_query_chars: int = 4000
     max_search_top_k: int = 20
+    knowledge_categories: str = "通用,财务,人力,制度"
+    dify_base_url: str = ""
+    dify_api_key: str = ""
+    dify_dataset_id: str = ""
+    rag_strict: bool = True
+    rag_min_score: float = 0.0
+    boost_enabled: bool = True
+    boost_weight: float = 1.0
+    gap_summary_interval_hours: float = 24.0
     dsh_enabled: bool = False
     dsh_base_url: str = ""
     dsh_api_key: str = ""

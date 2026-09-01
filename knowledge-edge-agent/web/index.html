@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="zh-CN" class="h-full bg-[#f4f0e6] text-[#2c241c]">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>企业知识飞轮 · 边缘节点经纬台</title>
+  <!-- Tailwind CSS（本地化，离线可用；CSP 已放行内联配置） -->
+  <script src="/tailwind.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: { 50: '#fdfbf7', 100: '#f9f6ef', 200: '#f4f0e6', 300: '#e8e2d4', 400: '#d7cbb8', 500: '#c2b29c', 600: '#9d8c75', 700: '#7a6c59', 800: '#4e4336', 900: '#2c241c' },
+            cinnabar: { DEFAULT: '#9e2a2b', light: '#b83b3c', dark: '#7c1d1e', bg: '#fcf2f2', border: '#ecc8c8' },
+            sandalwood: { DEFAULT: '#2a221b', light: '#3e342b', dark: '#1c1611' },
+            pine: { DEFAULT: '#2d5a4c', light: '#3d7564', bg: '#edf5f2', border: '#bad8cf' },
+            ochre: { DEFAULT: '#b8860b', light: '#d4a017', bg: '#fcf8ee', border: '#ebd9a8' }
+          },
+          fontFamily: {
+            serif: ['"Noto Serif SC"', '"Songti SC"', '"Source Han Serif SC"', '"STSong"', 'SimSun', 'Georgia', 'serif'],
+            sans: ['"Noto Sans SC"', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+          },
+          boxShadow: {
+            'classical': '0 4px 16px -2px rgba(44, 36, 28, 0.08), 0 2px 6px -2px rgba(44, 36, 28, 0.04)',
+            'classical-lg': '0 10px 25px -4px rgba(44, 36, 28, 0.12), 0 4px 10px -3px rgba(44, 36, 28, 0.06)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #f4f0e6;
+      background-image: radial-gradient(#e5decb 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .classical-card {
+      background: #fbf9f4;
+      border: 1px solid #ded4c3;
+      box-shadow: 0 3px 12px rgba(44, 36, 28, 0.05);
+      position: relative;
+    }
+    .classical-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #b8860b 30%, #9e2a2b 70%, transparent);
+      opacity: 0.7;
+    }
+    .seal-tag { font-family: '"Noto Serif SC"', '"Songti SC"', serif; border: 1px solid #9e2a2b; color: #9e2a2b; background-color: #fdf5f5; letter-spacing: 0.05em; }
+    .gold-seal-tag { font-family: '"Noto Serif SC"', '"Songti SC"', serif; border: 1px solid #b8860b; color: #8c6403; background-color: #fcf9ee; }
+    .pine-seal-tag { font-family: '"Noto Serif SC"', '"Songti SC"', serif; border: 1px solid #2d5a4c; color: #244b3f; background-color: #f1f7f5; }
+    .tab-btn.active { color: #9e2a2b; border-bottom: 2px solid #9e2a2b; background: rgba(158, 42, 43, 0.06); font-weight: 700; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #eee8db; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #c7bcab; border-radius: 4px; }
+    .ink-heading { font-family: '"Noto Serif SC"', '"Songti SC"', '"Source Han Serif SC"', serif; letter-spacing: 0.03em; }
+    /* 新手动画教学 */
+    #tutorialHighlight { animation: tutPulse 1.6s infinite; }
+    @keyframes tutPulse { 0%,100% { box-shadow: 0 0 0 4px rgba(212,160,23,.25), 0 0 24px rgba(212,160,23,.45); } 50% { box-shadow: 0 0 0 10px rgba(212,160,23,.12), 0 0 32px rgba(212,160,23,.6); } }
+    #tutorialCard { animation: tutCardIn .3s ease; }
+    @keyframes tutCardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans text-paper-900 antialiased selection:bg-cinnabar selection:text-white overflow-hidden">
+
+<header class="h-16 flex-shrink-0 bg-[#251e18] text-[#f7f3ea] border-b-2 border-[#b8860b]/60 px-6 flex items-center justify-between z-30 shadow-md">
+  <div class="flex items-center gap-3.5">
+    <div class="relative w-9 h-9 rounded-md bg-gradient-to-br from-[#b8860b] to-[#9e2a2b] p-0.5 shadow-sm flex items-center justify-center flex-shrink-0 border border-[#d8b056]">
+      <div class="w-full h-full bg-[#1e1712] rounded-[4px] flex items-center justify-center">
+        <span class="font-serif text-[#eac374] font-bold text-base leading-none">樞</span>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center gap-2.5">
+        <span class="ink-heading text-lg font-bold tracking-wider text-[#f5ebd8]">企业知识飞轮</span>
+        <span class="seal-tag px-2 py-0.5 text-[11px] font-medium rounded">边缘节点经纬台</span>
+      </div>
+      <p class="text-[11px] text-[#bdae9c] hidden sm:block font-serif">智库经纬 · 上传呈报 · 经籍求索 · 卷宗批红</p>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-3.5">
+    <div class="hidden md:flex items-center gap-2 px-3 py-1 rounded bg-[#1c1611]/90 border border-[#524436] text-xs text-[#d7cbba]">
+      <span class="relative flex h-2 w-2">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#d4a017] opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2 w-2 bg-[#b8860b]"></span>
+      </span>
+      <span id="liveStatusText" class="font-serif">边缘节点协行中</span>
+    </div>
+    <div class="relative flex items-center">
+      <input id="adminKey" type="password" placeholder="通关信印 (X-Admin-Key，批红用)" 
+        class="w-40 sm:w-52 bg-[#1c1611] text-[#f7f3ea] text-xs px-3 py-1.5 pl-7 rounded border border-[#5a4a3b] focus:outline-none focus:border-[#b8860b] focus:ring-1 focus:ring-[#b8860b] placeholder-[#8a7a6b] transition-all font-serif">
+      <svg class="w-3.5 h-3.5 text-[#b8860b] absolute left-2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+      </svg>
+    </div>
+  </div>
+</header>
+
+<nav id="nav" class="bg-[#ece5d5] border-b border-[#ded3be] px-4 flex gap-1 overflow-x-auto custom-scrollbar flex-shrink-0 z-20 select-none shadow-sm">
+  <button data-module="overview" class="tab-btn active px-4 py-2.5 text-xs font-serif text-paper-900 border-b-2 border-transparent transition-all">◈ 集群总览</button>
+  <button data-module="files" class="tab-btn px-4 py-2.5 text-xs font-serif text-paper-700 hover:text-cinnabar border-b-2 border-transparent transition-all">◈ 文卷呈报上传</button>
+  <button data-module="search" class="tab-btn px-4 py-2.5 text-xs font-serif text-paper-700 hover:text-cinnabar border-b-2 border-transparent transition-all">◈ 经籍求索研判</button>
+  <button data-module="proposals" class="tab-btn px-4 py-2.5 text-xs font-serif text-paper-700 hover:text-cinnabar border-b-2 border-transparent transition-all">◈ 卷宗批红审阅</button>
+  <button data-module="reserved" class="tab-btn px-4 py-2.5 text-xs font-serif text-paper-700 hover:text-cinnabar border-b-2 border-transparent transition-all">◈ 飞轮扩展象限</button>
+</nav>
+
+<main class="flex-1 overflow-y-auto custom-scrollbar p-5 md:p-7 max-w-7xl w-full mx-auto space-y-6">
+
+  <!-- ===== 总览 ===== -->
+  <section id="module-overview" class="module space-y-6">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="classical-card p-4 rounded-lg">
+        <div class="text-[11px] font-serif tracking-widest text-paper-600 font-bold">在籍节点</div>
+        <div class="mt-2 flex items-baseline justify-between"><span id="mNodes" class="text-3xl font-bold font-serif text-sandalwood-dark tracking-tight">-</span><span class="pine-seal-tag px-1.5 py-0.5 text-[10px] rounded">本机</span></div>
+      </div>
+      <div class="classical-card p-4 rounded-lg">
+        <div class="text-[11px] font-serif tracking-widest text-paper-600 font-bold">本地文卷</div>
+        <div class="mt-2 flex items-baseline justify-between"><span id="mFiles" class="text-3xl font-bold font-serif text-sandalwood-dark tracking-tight">-</span><span class="text-xs text-paper-600 font-serif">待呈报</span></div>
+      </div>
+      <div class="classical-card p-4 rounded-lg">
+        <div class="text-[11px] font-serif tracking-widest text-paper-600 font-bold">中心通达</div>
+        <div class="mt-2 flex items-baseline justify-between"><span id="mCenter" class="text-3xl font-bold font-serif text-pine tracking-tight">-</span><span class="pine-seal-tag px-1.5 py-0.5 text-[10px] rounded">脉象</span></div>
+      </div>
+      <div class="classical-card p-4 rounded-lg">
+        <div class="text-[11px] font-serif tracking-widest text-paper-600 font-bold">节点职能</div>
+        <div class="mt-2 flex items-baseline justify-between"><span id="mRole" class="text-3xl font-bold font-serif text-cinnabar tracking-tight">-</span><span class="seal-tag px-1.5 py-0.5 text-[10px] rounded">定职</span></div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 classical-card rounded-lg p-5 space-y-4">
+        <div class="flex items-center justify-between border-b border-[#e5dcce] pb-3">
+          <div class="flex items-center gap-2"><span class="w-2 h-4 bg-cinnabar rounded-sm"></span><h3 class="ink-heading font-bold text-sandalwood text-base">本节点封分与上报脉象</h3></div>
+          <span class="text-xs text-paper-600 font-serif">心跳巡勘周期：30息 (30s)</span>
+        </div>
+        <div class="overflow-x-auto custom-scrollbar">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead><tr class="border-b border-[#ded3be] text-paper-700 font-serif font-bold uppercase tracking-wider bg-[#f3ede1]/70">
+              <th class="py-2.5 px-3">节点封号</th><th class="py-2.5 px-3">脉象</th><th class="py-2.5 px-3">拓本职能</th><th class="py-2.5 px-3">Agent 版本</th><th class="py-2.5 px-3">最近巡勘</th>
+            </tr></thead>
+            <tbody id="nodeRows" class="divide-y divide-[#ece3d4] font-serif text-sandalwood"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="classical-card rounded-lg p-5 space-y-4">
+        <div class="flex items-center gap-2 mb-3 border-b border-[#e5dcce] pb-2"><span class="w-2 h-4 bg-pine rounded-sm"></span><h3 class="ink-heading font-bold text-sandalwood text-base">边缘经纬设定</h3></div>
+        <div id="systemStatusCard" class="space-y-3 text-xs text-paper-800"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 上传 ===== -->
+  <section id="module-files" class="module hidden space-y-6">
+    <div class="classical-card rounded-lg p-5 space-y-4">
+      <div class="pb-3 border-b border-[#e5dcce]">
+        <h3 class="ink-heading font-bold text-sandalwood text-base flex items-center gap-2"><span class="w-2 h-4 bg-cinnabar rounded-sm"></span>文卷呈报与上传归档</h3>
+        <p class="text-xs text-paper-600 mt-1 font-serif">选择部类后呈报文卷；文本自动解析切片，二进制进入对象存储；可勾选同步 Dify 数据集</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <select id="fileCategoryFilter" class="bg-[#f7f2e7] border border-[#d2c5b0] text-sandalwood text-xs rounded px-3 py-2 focus:outline-none focus:border-cinnabar font-serif">
+          <option value="">全宗部类</option>
+        </select>
+        <input id="fileInput" type="file" multiple class="text-xs text-paper-700 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:bg-[#eee5d5] file:text-sandalwood hover:file:bg-[#e4dcce] font-serif">
+        <label class="flex items-center gap-2 text-xs text-paper-800 font-serif cursor-pointer"><input id="syncDify" type="checkbox" checked class="w-4 h-4 accent-cinnabar"> 上传后同步 Dify</label>
+        <button onclick="doUpload(this)" class="px-5 py-2 rounded bg-cinnabar hover:bg-cinnabar-dark text-white text-xs font-serif font-bold shadow-sm transition-all">◈ 呈报上传</button>
+      </div>
+      <div id="uploadResults" class="space-y-1.5 font-serif"></div>
+      <div class="pt-3 border-t border-[#e5dcce] flex items-center gap-3">
+        <input id="ingestFileId" type="number" placeholder="已呈报卷册 ID（补同步 Dify）" class="w-56 bg-[#f7f2e7] border border-[#d2c5b0] text-sandalwood text-xs rounded px-3 py-1.5 focus:outline-none focus:border-cinnabar font-serif">
+        <button onclick="doIngestById()" class="px-3.5 py-1.5 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-sandalwood text-xs border border-[#cfc3af] font-serif">◈ 同步 Dify</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 检索 ===== -->
+  <section id="module-search" class="module hidden space-y-6">
+    <div class="classical-card rounded-lg p-5 space-y-4">
+      <div class="pb-3 border-b border-[#e5dcce]">
+        <h3 class="ink-heading font-bold text-sandalwood text-base flex items-center gap-2"><span class="w-2 h-4 bg-pine rounded-sm"></span>经籍求索研判（带参考链接与热度）</h3>
+        <p class="text-xs text-paper-600 mt-1 font-serif">本地/中心向量砚池推演相似度；结果含参考出处与飞轮热度</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="searchQuery" type="text" placeholder="输入求索事由，如：年假怎么申请" class="flex-1 min-w-[240px] bg-[#fbf8f0] border border-[#cfc2ad] text-sandalwood text-xs rounded px-3 py-2.5 focus:outline-none focus:border-pine font-serif shadow-inner">
+        <select id="searchCat" class="bg-[#fbf8f0] border border-[#cfc2ad] text-sandalwood text-xs rounded px-3 py-2.5 focus:outline-none focus:border-pine font-serif"><option value="">全宗部类</option></select>
+        <input id="searchTopK" type="number" min="1" max="20" value="5" class="w-16 bg-[#fbf8f0] border border-[#cfc2ad] text-sandalwood text-xs rounded px-2 py-2.5 font-mono text-center">
+        <button onclick="runSearch(this)" class="px-5 py-2.5 rounded bg-pine hover:bg-pine-light text-white text-xs font-serif font-bold shadow-sm transition-all">◈ 启印求索</button>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-xs text-paper-700 font-serif">
+        <span>经典问案:</span>
+        <button onclick="quickFillSearch('年假怎么申请')" class="px-2.5 py-1 rounded bg-[#eee6d6] hover:bg-[#e4d9c4] text-sandalwood border border-[#cbbeaa] text-[11px]">年假申请</button>
+        <button onclick="quickFillSearch('报销流程')" class="px-2.5 py-1 rounded bg-[#eee6d6] hover:bg-[#e4d9c4] text-sandalwood border border-[#cbbeaa] text-[11px]">报销流程</button>
+        <button onclick="quickFillSearch('新员工入职')" class="px-2.5 py-1 rounded bg-[#eee6d6] hover:bg-[#e4d9c4] text-sandalwood border border-[#cbbeaa] text-[11px]">新员工入职</button>
+      </div>
+      <div id="searchStatus" class="text-xs font-serif text-paper-600">砚池待命，录入求索题头</div>
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left text-xs border-collapse font-serif">
+          <thead><tr class="border-b border-[#ded3be] text-paper-700 bg-[#f3ede1]/70 font-bold">
+            <th class="py-2.5 px-3">部类</th><th class="py-2.5 px-3">出处典籍</th><th class="py-2.5 px-3">签号</th><th class="py-2.5 px-3">契合度</th><th class="py-2.5 px-3">热度</th><th class="py-2.5 px-3">勘阅出处</th><th class="py-2.5 px-3">命中注疏要义</th>
+          </tr></thead>
+          <tbody id="searchRows" class="divide-y divide-[#ece3d4] text-sandalwood">
+            <tr><td colspan="7" class="py-8 text-center text-paper-500">点击「启印求索」查看命中切片</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 审批 ===== -->
+  <section id="module-proposals" class="module hidden space-y-6">
+    <div class="classical-card rounded-lg p-5 space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-[#e5dcce]">
+        <div>
+          <h3 class="ink-heading font-bold text-sandalwood text-base flex items-center gap-2"><span class="w-2 h-4 bg-cinnabar rounded-sm"></span>卷宗批红审阅司（提案审批）</h3>
+          <p class="text-xs text-paper-600 mt-1 font-serif">点击标题展读奏本全文，凭通关信印（X-Admin-Key）准奏或驳回</p>
+        </div>
+        <button onclick="loadProposals()" class="px-3 py-1.5 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-sandalwood text-xs border border-[#cfc3af] font-serif">◈ 翻阅奏本</button>
+      </div>
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left text-xs border-collapse font-serif">
+          <thead><tr class="border-b border-[#ded3be] text-paper-700 bg-[#f3ede1]/70 font-bold">
+            <th class="py-2.5 px-3">奏本题纲（点击展读）</th><th class="py-2.5 px-3">体例</th><th class="py-2.5 px-3">裁定</th><th class="py-2.5 px-3">具呈人</th><th class="py-2.5 px-3">上奏时刻</th><th class="py-2.5 px-3">批红主事</th><th class="py-2.5 px-3 text-right">裁夺</th>
+          </tr></thead>
+          <tbody id="proposalRows" class="divide-y divide-[#ece3d4] text-sandalwood"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 预留 ===== -->
+  <section id="module-reserved" class="module hidden space-y-6 font-serif">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="p-4 rounded-lg border border-dashed border-[#cbbfae] bg-[#f6efe3] space-y-1.5">
+        <h4 class="text-xs font-bold text-cinnabar">📜 本地规约接驳</h4>
+        <p class="text-[11px] text-paper-700">预留现场采集接口，产线异动直接化为盲区考据题眼。</p>
+      </div>
+      <div class="p-4 rounded-lg border border-dashed border-[#cbbfae] bg-[#f6efe3] space-y-1.5">
+        <h4 class="text-xs font-bold text-pine">🤖 多智能体协理 (Agent Swarm)</h4>
+        <p class="text-[11px] text-paper-700">预留挂接本地私有模型，实现离线自主奏本润色。</p>
+      </div>
+      <div class="p-4 rounded-lg border border-dashed border-[#cbbfae] bg-[#f6efe3] space-y-1.5">
+        <h4 class="text-xs font-bold text-ochre">⚡ 差量向量同步</h4>
+        <p class="text-[11px] text-paper-700">预留断网重连后 Byte-level 差量补丁同步，减少带宽开销。</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 新手动画教学（每次打开显示，可跳过） -->
+<div id="tutorialOverlay" class="hidden fixed inset-0 z-[100]">
+  <div id="tutorialBackdrop" class="absolute inset-0 bg-[#251e18]/70 backdrop-blur-sm" onclick="tutorialSkip()"></div>
+  <div id="tutorialHighlight" class="absolute border-2 border-[#d4a017] rounded-lg pointer-events-none" style="transition:all .35s ease"></div>
+  <div id="tutorialCard" class="absolute z-10 w-[340px] max-w-[calc(100vw-32px)]">
+    <div class="bg-[#faf7f0] border-2 border-[#b8860b] rounded-lg shadow-2xl overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-2.5 bg-[#f2ebd9] border-b border-[#dfd4c1]">
+        <span id="tutorialStepNo" class="text-[11px] text-paper-600 font-serif">第 1 / 6 步</span>
+        <a href="javascript:void(0)" onclick="tutorialSkip()" class="text-[11px] text-cinnabar hover:underline font-serif">跳过教程 ✕</a>
+      </div>
+      <div class="px-4 py-3.5">
+        <h4 id="tutorialTitle" class="ink-heading font-bold text-sandalwood text-sm"></h4>
+        <p id="tutorialDesc" class="text-xs text-paper-700 font-serif leading-relaxed mt-1.5"></p>
+      </div>
+      <div class="flex items-center justify-between px-4 py-2.5 border-t border-[#dfd4c1] bg-[#faf7f0]">
+        <button id="tutorialPrev" onclick="tutorialStep(-1)" class="px-3 py-1.5 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-sandalwood text-xs border border-[#cfc3af] font-serif">上一步</button>
+        <div id="tutorialDots" class="flex gap-1.5"></div>
+        <button id="tutorialNext" onclick="tutorialStep(1)" class="px-4 py-1.5 rounded bg-cinnabar hover:bg-cinnabar-dark text-white text-xs font-bold font-serif">下一步 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+<script>
+"use strict";
+const rawFetch = window.fetch.bind(window);
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function edgeToken(){ return localStorage.getItem('edgeToken') || ''; }
+function adminKey(){ return localStorage.getItem('adminKey') || ''; }
+function authHeaders(extra){
+  const h = Object.assign({}, extra || {});
+  const t = edgeToken(); if (t) h['Authorization'] = 'Bearer ' + t;
+  const a = adminKey(); if (a) h['X-Admin-Key'] = a;
+  return h;
+}
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = authHeaders(opts.headers);
+  const r = await rawFetch(path, opts);
+  const ct = r.headers.get('content-type') || '';
+  const data = ct.indexOf('json') >= 0 ? await r.json() : await r.text();
+  if (!r.ok) {
+    const m = data && typeof data === 'object' && data.error ? data.error : ('HTTP ' + r.status);
+    throw new Error(m);
+  }
+  return data;
+}
+function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const fmt = s => s ? new Date(s).toLocaleString() : '-';
+
+// ===== 新手动画教学（每次打开显示，可跳过） =====
+const tutorialSteps = [
+  { target: '#adminKey', title: '通关信印 (X-Admin-Key)', desc: '卷宗批红审阅需要填写中心管理员信印；上传与检索无需填写。' },
+  { target: '#nav button[data-module="files"]', title: '模块导航', desc: '边缘端五个模块：集群总览 / 文卷呈报上传 / 经籍求索研判 / 卷宗批红审阅 / 飞轮扩展象限。' },
+  { module: 'files', target: '#module-files h3', title: '文卷呈报上传', desc: '选部类 → 选文件 → 勾选「上传后同步 Dify」→ 呈报上传；文本自动解析切片，二进制进入对象存储。' },
+  { module: 'search', target: '#module-search h3', title: '经籍求索研判', desc: '输入问题检索知识库，结果带参考出处与飞轮热度；经典问案可一键填入。' },
+  { module: 'proposals', target: '#module-proposals h3', title: '卷宗批红审阅', desc: '点击标题展读奏本全文，凭通关信印准奏批红或驳回。' },
+  { module: 'reserved', target: '#module-reserved h4', title: '飞轮扩展象限', desc: '预留扩展接口：现场规约接驳 / 多智能体协理 / 差量向量同步。' },
+];
+let tutorialIndex = 0;
+function tutorialOpen(){ tutorialIndex = 0; $('#tutorialOverlay').classList.remove('hidden'); tutorialRender(); }
+function tutorialSkip(){ $('#tutorialOverlay').classList.add('hidden'); }
+function tutorialStep(d){ tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender(); }
+function tutorialRender(){
+  const st = tutorialSteps[tutorialIndex];
+  $('#tutorialStepNo').textContent = '第 ' + (tutorialIndex + 1) + ' / ' + tutorialSteps.length + ' 步';
+  $('#tutorialTitle').textContent = st.title;
+  $('#tutorialDesc').textContent = st.desc;
+  $('#tutorialPrev').style.visibility = tutorialIndex === 0 ? 'hidden' : 'visible';
+  $('#tutorialNext').textContent = tutorialIndex === tutorialSteps.length - 1 ? '完成 ✓' : '下一步 →';
+  $('#tutorialDots').innerHTML = tutorialSteps.map((_, i) => '<i class="w-1.5 h-1.5 rounded-full ' + (i === tutorialIndex ? 'bg-cinnabar' : 'bg-[#d7cbb8]') + '"></i>').join('');
+  if (st.module && typeof switchModule === 'function') switchModule(st.module);
+  setTimeout(() => tutorialPosition(st.target), 150);
+}
+function tutorialPosition(sel){
+  const el = document.querySelector(sel), hl = $('#tutorialHighlight'), card = $('#tutorialCard');
+  if (!el){ hl.style.display = 'none'; card.style.left = '50%'; card.style.top = '40%'; card.style.transform = 'translateX(-50%)'; return; }
+  const r = el.getBoundingClientRect();
+  hl.style.display = 'block';
+  hl.style.left = (r.left - 8) + 'px'; hl.style.top = (r.top - 8) + 'px'; hl.style.width = (r.width + 16) + 'px'; hl.style.height = (r.height + 16) + 'px';
+  let cx = r.left + r.width / 2 - 170; cx = Math.max(16, Math.min(cx, window.innerWidth - 356));
+  let cy = r.bottom + 14;
+  if (cy + 200 > window.innerHeight) cy = Math.max(16, r.top - 200);
+  card.style.left = cx + 'px'; card.style.top = cy + 'px'; card.style.transform = 'none';
+}
+
+function notify(message, type){
+  const container = $('#toastContainer');
+  const toast = document.createElement('div');
+  const styles = { info: 'bg-[#faf7f0] border-[#b8860b] text-sandalwood', success: 'bg-[#f4faf7] border-pine text-pine font-bold', warn: 'bg-[#fdfaf2] border-ochre text-ochre font-bold', danger: 'bg-[#fdf5f5] border-cinnabar text-cinnabar font-bold' };
+  toast.className = 'pointer-events-auto px-4 py-2.5 rounded border-2 shadow-classical-lg text-xs font-serif flex items-center gap-2.5 ' + (styles[type] || styles.info);
+  toast.innerHTML = '<span>' + esc(message) + '</span>';
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3200);
+}
+
+function switchModule(name){
+  $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.module === name));
+  $$('.module').forEach(m => m.classList.toggle('hidden', m.id !== 'module-' + name));
+  ({ overview: loadOverview, files: () => {}, search: () => {}, proposals: loadProposals, reserved: () => {} })[name]();
+}
+$('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.module) switchModule(b.dataset.module); });
+
+async function loadOverview(){
+  try{
+    const s = await api('/api/status');
+    $('#mNodes').textContent = 1;
+    $('#mFiles').textContent = s.watched_files || 0;
+    $('#mCenter').textContent = s.center_ok ? '已连接' : '失连';
+    $('#mCenter').className = 'text-3xl font-bold font-serif tracking-tight ' + (s.center_ok ? 'text-pine' : 'text-cinnabar');
+    $('#mRole').textContent = s.is_replica ? '副本' : '普通';
+    $('#nodeRows').innerHTML = `
+      <tr class="hover:bg-[#f5eee1]">
+        <td class="py-2.5 px-3 font-bold flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-pine"></span>${esc(s.node_id)}</td>
+        <td class="py-2.5 px-3"><span class="pine-seal-tag px-2 py-0.5 rounded text-[10px]">在籍安康</span></td>
+        <td class="py-2.5 px-3 text-paper-800">${s.is_replica ? '主拓本所' : '经籍常务所'}</td>
+        <td class="py-2.5 px-3 font-mono text-paper-700">v${esc(s.agent_version)}</td>
+        <td class="py-2.5 px-3 text-paper-600 font-mono text-[11px]">${fmt(new Date().toISOString())}</td>
+      </tr>`;
+    $('#systemStatusCard').innerHTML = `
+      <div class="p-3 bg-[#f3ece0] rounded border border-[#dfd4c1] space-y-1.5 font-serif">
+        <div class="flex justify-between items-center"><span class="text-paper-600">中心地址</span><span class="text-pine font-bold font-mono">${esc(s.center_url)}</span></div>
+        <div class="flex justify-between items-center"><span class="text-paper-600">监听目录</span><span class="text-sandalwood font-bold">${esc(s.watch_dir)}</span></div>
+        <div class="flex justify-between items-center"><span class="text-paper-600">网页入口</span><span class="font-mono text-cinnabar">${esc(s.web_listen)}</span></div>
+        <div class="flex justify-between items-center"><span class="text-paper-600">本地文卷</span><span class="text-sandalwood font-bold">${s.watched_files || 0} 册</span></div>
+      </div>`;
+  }catch(e){
+    $('#systemStatusCard').innerHTML = '<div class="text-xs text-cinnabar font-serif">状态读取失败：' + esc(e.message) + '</div>';
+  }
+}
+
+let uploadCategory = '通用';
+async function loadCategories(){
+  try{
+    const d = await api('/api/categories');
+    const opts = (d.categories || []).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    $('#fileCategoryFilter').innerHTML = '<option value="">全宗部类</option>' + opts;
+    $('#searchCat').innerHTML = '<option value="">全宗部类</option>' + opts;
+  }catch(e){}
+}
+$('#fileCategoryFilter').addEventListener('change', e => { uploadCategory = e.target.value || '通用'; });
+
+async function doUpload(btn){
+  const input = $('#fileInput');
+  if (!input.files.length) { notify('请选取欲呈报之文卷', 'warn'); return; }
+  if (btn) btn.disabled = true;
+  const fd = new FormData();
+  for (const f of input.files) fd.append('files', f);
+  fd.append('category', uploadCategory);
+  $('#uploadResults').innerHTML = '<div class="text-xs text-paper-600 animate-pulse font-serif">正在呈送卷宗与切片注墨...</div>';
+  try{
+    const d = await api('/api/upload', { method: 'POST', body: fd });
+    $('#uploadResults').innerHTML = (d.results || []).map(r => {
+      if (r.error) return `<div class="text-xs text-cinnabar font-serif">${esc(r.name)}：❌ ${esc(r.error)}</div>`;
+      const kind = r.mode === 'text' ? '文本解析' : '二进制归档';
+      return `<div class="text-xs text-sandalwood font-serif">${esc(r.name)}：✅ ${kind} · 部类 ${esc(r.category || '-')} · file_id=${r.file_id} · ${esc((r.sha256 || '').slice(0, 12))}…</div>`;
+    }).join('');
+    if ($('#syncDify').checked) {
+      for (const r of (d.results || [])) {
+        if (!r.error && r.file_id) {
+          try {
+            const s = await api('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_id: r.file_id }) });
+            $('#uploadResults').innerHTML += `<div class="text-xs text-pine font-serif">↻ ${esc(r.name)} 同步 Dify：${s.queued ? '已排队（解析后自动接入）' : '已接入 ✓'}</div>`;
+          } catch (e) { $('#uploadResults').innerHTML += `<div class="text-xs text-cinnabar font-serif">↻ ${esc(r.name)} 同步失败：${esc(e.message)}</div>`; }
+        }
+      }
+    }
+    input.value = '';
+  }catch(e){
+    $('#uploadResults').innerHTML = '<div class="text-xs text-cinnabar font-serif">❌ ' + esc(e.message) + '</div>';
+  }
+  finally{ if (btn) btn.disabled = false; }
+}
+async function doIngestById(){
+  const id = parseInt($('#ingestFileId').value, 10);
+  if (!id) { notify('请填写卷册 ID', 'warn'); return; }
+  try{
+    const s = await api('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_id: id }) });
+    notify(`卷册 #${id}：${s.queued ? '已排队，解析后自动接入 Dify' : '已接入 Dify ✓'}`, 'success');
+  }catch(e){ notify('同步失败：' + e.message, 'danger'); }
+}
+
+function quickFillSearch(q){ $('#searchQuery').value = q; runSearch(); }
+async function runSearch(btn){
+  const q = $('#searchQuery').value.trim();
+  if (!q) { notify('请录入求索题头', 'warn'); return; }
+  if (btn) btn.disabled = true;
+  $('#searchStatus').innerHTML = '<span class="text-paper-600 animate-pulse font-serif">以向量砚池研判契合度...</span>';
+  try{
+    const cat = $('#searchCat').value || null;
+    const d = await api('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: q, top_k: Number($('#searchTopK').value) || 5, category: cat }) });
+    $('#searchStatus').innerHTML = `考得 <span class="text-cinnabar font-bold">${d.count}</span> 条签文 · 向量 ${esc(d.embedding_provider)}/${esc(d.embedding_status)}`;
+    $('#searchRows').innerHTML = (d.results || []).map(x => `
+      <tr class="hover:bg-[#f5eee1]">
+        <td class="py-2.5 px-3"><span class="gold-seal-tag px-2 py-0.5 rounded text-[10px]">${esc(x.category || '-')}</span></td>
+        <td class="py-2.5 px-3 font-mono text-sandalwood font-semibold">${esc(x.path)}</td>
+        <td class="py-2.5 px-3 font-mono text-cinnabar font-bold">#${x.chunk_index}</td>
+        <td class="py-2.5 px-3 font-mono font-bold ${x.score > 0.9 ? 'text-pine' : 'text-ochre'}">${Number(x.score).toFixed(4)}</td>
+        <td class="py-2.5 px-3 font-mono text-paper-600">${x.hit_count || 0}次</td>
+        <td class="py-2.5 px-3"><a class="text-cinnabar hover:underline font-bold" href="/api/v1/gateway/files/${x.file_id}" target="_blank">勘阅出处</a></td>
+        <td class="py-2.5 px-3 text-sandalwood leading-relaxed max-w-md">${esc(x.content)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="py-6 text-center text-paper-500 font-serif">未得签文</td></tr>';
+  }catch(e){ $('#searchStatus').innerHTML = '<span class="text-cinnabar font-serif">检索失败：' + esc(e.message) + '</span>'; }
+  finally{ if (btn) btn.disabled = false; }
+}
+
+async function loadProposals(){
+  try{
+    const list = await api('/api/proposals');
+    $('#proposalRows').innerHTML = list.map((p, i) => `
+      <tr class="hover:bg-[#f5eee1]">
+        <td class="py-2.5 px-3"><a href="javascript:void(0)" onclick="toggleProposalDetail(${i})" class="font-bold text-cinnabar hover:underline flex items-center gap-1.5"><span>📜</span>${esc(p.title)}</a></td>
+        <td class="py-2.5 px-3 font-mono text-paper-700 text-[11px]">${esc(p.kind)}</td>
+        <td class="py-2.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] ${p.status === 'approved' ? 'pine-seal-tag' : p.status === 'rejected' ? 'seal-tag' : 'gold-seal-tag'}">${p.status === 'approved' ? '已批红' : p.status === 'rejected' ? '已驳回' : '待裁决'}</span></td>
+        <td class="py-2.5 px-3 font-serif">${esc(p.created_by)}</td>
+        <td class="py-2.5 px-3 text-paper-600 font-mono text-[11px]">${fmt(p.created_at)}</td>
+        <td class="py-2.5 px-3 text-paper-700">${esc(p.reviewed_by || '未批')}</td>
+        <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1.5">
+          ${p.status === 'pending' ? `<button onclick="reviewProposal(${p.id},'approved',this)" class="px-2.5 py-1 rounded bg-pine hover:bg-pine-light text-white text-[11px] font-bold">准奏批红</button><button onclick="reviewProposal(${p.id},'rejected',this)" class="px-2 py-1 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-cinnabar text-[11px] font-bold border border-cinnabar/30">驳回</button>` : '<span class="text-paper-500 text-[11px]">已入档</span>'}
+        </td>
+      </tr>
+      <tr id="proposal-detail-${i}" class="hidden bg-[#f4ece0]">
+        <td colspan="7" class="p-4"><pre class="p-3 bg-[#f8f4ea] rounded text-sandalwood font-serif text-xs whitespace-pre-wrap leading-relaxed border border-[#e2d8c7]">${esc(p.body || '(无正文)')}</pre></td>
+      </tr>`).join('') || '<tr><td colspan="7" class="py-6 text-center text-paper-500 font-serif">暂无关章待审</td></tr>';
+  }catch(e){
+    $('#proposalRows').innerHTML = '<tr><td colspan="7" class="py-6 text-center text-cinnabar font-serif">读取失败：' + esc(e.message) + '（批红需中心管理员信印）</td></tr>';
+  }
+}
+function toggleProposalDetail(i){ const el = $('#proposal-detail-' + i); if (el) el.classList.toggle('hidden'); }
+async function reviewProposal(id, decision, btn){
+  if (btn) btn.disabled = true;
+  try{
+    await api('/api/proposals/' + id + '/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: decision, reviewer: 'edge-admin' }) });
+    notify(decision === 'approved' ? `奏本 #${id} 准奏批红` : `奏本 #${id} 已驳回`, decision === 'approved' ? 'success' : 'warn');
+    loadProposals();
+  }catch(e){ notify('批红失败：' + e.message, 'danger'); }
+  finally{ if (btn) btn.disabled = false; }
+}
+
+(function bootstrap(){
+  $('#adminKey').value = localStorage.getItem('adminKey') || '';
+  setTimeout(tutorialOpen, 900);
+  $('#adminKey').onchange = () => { localStorage.setItem('adminKey', $('#adminKey').value.trim()); notify('已校准通关信印', 'info'); };
+  const qp = new URLSearchParams(location.search);
+  if (qp.get('token')) { localStorage.setItem('edgeToken', qp.get('token').trim()); }
+  (async function init(){
+    await loadCategories();
+    loadOverview();
+    loadProposals();
+  })();
+  setInterval(() => {
+    const active = $('#nav button.active');
+    if (active && active.dataset.module === 'overview') loadOverview();
+  }, 10000);
+})();
+</script>
+
+</body>
+</html>

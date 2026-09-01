@@ -7,11 +7,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db, initialize_database
-from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, RemoteCommand, Alert
-from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, FlywheelFeedbackCreate, FlywheelRetrievalCreate, KnowledgeSearchRequest, DifyFlywheelEvent, PipelineRunRequest, ApiKeyCreate, TokenCreate
-from .services import heartbeat, apply_node_status_event, report_file, queue_file_content_parse, create_task, transition_task, review_proposal, refresh_node_statuses, reconcile_file_liveness, replica_policy_health, create_remote_command, acknowledge_remote_command, claim_next_remote_command, acknowledge_alert, record_flywheel_feedback, record_flywheel_retrieval, aggregate_flywheel_gaps, create_flywheel_proposal, search_knowledge, create_dsh_review_proposal, store_blob, load_blob
+from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, RemoteCommand, Alert, RetrievalLog, GapItem
+from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, KnowledgeSearchRequest, PipelineRunRequest, ApiKeyCreate, TokenCreate, RagChatRequest, GapStatusUpdate, ConfigUpdate
+from .services import heartbeat, apply_node_status_event, report_file, queue_file_content_parse, create_task, transition_task, review_proposal, refresh_node_statuses, reconcile_file_liveness, replica_policy_health, create_remote_command, acknowledge_remote_command, claim_next_remote_command, acknowledge_alert, search_knowledge, create_dsh_review_proposal, store_blob, load_blob, list_gap_items, run_gap_summary, update_gap_item_status
 from .dispatcher import executor_health
 from .security import authorize, create_api_key, revoke_api_key, create_token, oidc_status
+from . import dify_client
+from .settings_store import list_overrides, set_override, get_effective_setting, mask_secret, WRITABLE_KEYS
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -40,6 +42,19 @@ def require_node(request: Request, x_node_key: str | None = Header(default=None)
     if authorize(request, db, "node"):
         return
     raise HTTPException(401, "node authentication required")
+
+
+def require_admin_or_node(request: Request, x_admin_key: str | None = Header(default=None), x_node_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
+    """允许管理员或节点（中心控制台用 admin，边缘端用 node key）触发数据同步。"""
+    if settings.app_env != "production":
+        return
+    if settings.admin_api_key and x_admin_key == settings.admin_api_key:
+        return
+    if settings.node_api_key and x_node_key == settings.node_api_key:
+        return
+    if authorize(request, db, "admin") or authorize(request, db, "node"):
+        return
+    raise HTTPException(401, "admin or node authentication required")
 
 
 def require_mobile(request: Request, x_mobile_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
@@ -71,17 +86,6 @@ def require_search(request: Request, x_search_key: str | None = Header(default=N
     if authorize(request, db, "search"):
         return
     raise HTTPException(401, "search authentication required")
-
-
-def require_flywheel_ingest(request: Request, x_flywheel_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
-    """Only a trusted gateway may append feedback/retrieval evidence in production."""
-    if settings.app_env != "production":
-        return
-    if settings.flywheel_ingest_api_key and x_flywheel_key == settings.flywheel_ingest_api_key:
-        return
-    if authorize(request, db, "flywheel"):
-        return
-    raise HTTPException(401, "flywheel ingest authentication required")
 
 
 def require_download(request: Request, x_download_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
@@ -166,6 +170,20 @@ def file_summary(db: Session = Depends(get_db)):
     return {"total": total, "missing": missing, "healthy_rate": round((total - missing) / total, 4) if total else 1}
 
 
+@app.get("/api/v1/categories")
+def category_list(db: Session = Depends(get_db)):
+    """Host-defined knowledge partitions merged with partitions already present in the index."""
+    configured = [c.strip() for c in settings.knowledge_categories.split(",") if c.strip()]
+    rows = db.execute(
+        select(FileRecord.category, func.count(FileRecord.id))
+        .where(FileRecord.alive.is_(True))
+        .group_by(FileRecord.category)
+    ).all()
+    counts = {cat or "未分类": n for cat, n in rows}
+    merged = list(dict.fromkeys([*configured, *counts.keys()]))
+    return {"categories": merged, "counts": counts, "default": configured[0] if configured else "未分类"}
+
+
 @app.post("/api/v1/reconciliation/files", dependencies=[Depends(require_admin)])
 def reconcile_files(db: Session = Depends(get_db)):
     return reconcile_file_liveness(db, settings.file_missing_after_seconds, settings.fixed_replica_node_ids)
@@ -237,6 +255,7 @@ def pipeline_files(db: Session = Depends(get_db)):
         output.append({
             "id": record.id,
             "path": record.path,
+            "category": record.category,
             "file_hash": record.file_hash,
             "size_bytes": record.size_bytes,
             "status": record.status,
@@ -348,7 +367,7 @@ def knowledge_search(data: KnowledgeSearchRequest, x_actor: str | None = Header(
     top_k = min(data.top_k, settings.max_search_top_k)
     actor = "search-gateway" if settings.app_env == "production" else (x_actor or "search-gateway")
     try:
-        result = search_knowledge(db, data.query, top_k=top_k, idempotency_key=data.idempotency_key, actor=actor)
+        result = search_knowledge(db, data.query, top_k=top_k, idempotency_key=data.idempotency_key, actor=actor, category=data.category)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return result
@@ -389,64 +408,81 @@ def alert_list(status: str | None = None, db: Session = Depends(get_db)):
     return db.scalars(query).all()
 
 
-@app.post("/api/v1/flywheel/feedback", dependencies=[Depends(require_flywheel_ingest)])
-def flywheel_feedback(data: FlywheelFeedbackCreate, x_actor: str | None = Header(default=None), db: Session = Depends(get_db)):
-    actor = x_actor.strip() if settings.app_env == "production" and x_actor and x_actor.strip() else ("flywheel-gateway" if settings.app_env == "production" else data.actor)
-    metadata = dict(data.metadata)
-    if settings.app_env == "production":
-        metadata["client_actor"] = data.actor
-    data.actor = actor
-    data.metadata = metadata
-    event = record_flywheel_feedback(db, data)
-    return {"id": event.id, "event_type": event.event_type, "status": "recorded"}
+@app.post("/api/v1/rag/chat", dependencies=[Depends(require_search)])
+def rag_chat(data: RagChatRequest, db: Session = Depends(get_db)):
+    """产品问答：代理 Dify。严格接地（无参考命中时拒绝回答），返回带参考链接的结果。"""
+    return dify_client.chat_with_references(db, data.query, top_k=data.top_k)
 
 
-@app.post("/api/v1/flywheel/retrievals", dependencies=[Depends(require_flywheel_ingest)])
-def flywheel_retrieval(data: FlywheelRetrievalCreate, x_actor: str | None = Header(default=None), db: Session = Depends(get_db)):
-    actor = x_actor.strip() if settings.app_env == "production" and x_actor and x_actor.strip() else ("flywheel-gateway" if settings.app_env == "production" else data.actor)
-    metadata = dict(data.metadata)
-    if settings.app_env == "production":
-        metadata["client_actor"] = data.actor
-    data.actor = actor
-    data.metadata = metadata
-    event = record_flywheel_retrieval(db, data)
-    return {"id": event.id, "event_type": event.event_type, "status": "recorded"}
+@app.post("/api/v1/rag/ingest", dependencies=[Depends(require_admin_or_node)])
+def rag_ingest(file_id: int, db: Session = Depends(get_db)):
+    """把文件接入 Dify 数据集（中心控制台/边缘端均可触发）。
 
-
-@app.post("/api/v1/integrations/dify/flywheel-events", dependencies=[Depends(require_flywheel_ingest)])
-def dify_flywheel_event(data: DifyFlywheelEvent, x_actor: str | None = Header(default=None), db: Session = Depends(get_db)):
-    """Normalize Dify webhook evidence into the same idempotent flywheel contract."""
-    actor = x_actor.strip() if settings.app_env == "production" and x_actor and x_actor.strip() else ("dify-gateway" if settings.app_env == "production" else "dify")
-    metadata = dict(data.metadata)
-    metadata["source"] = "dify"
-    if settings.app_env == "production":
-        metadata["client_actor"] = metadata.get("client_actor") or "dify-webhook"
+    已解析 → 立即接入；尚未解析完 → 排队 dify_ingest 任务，解析后由 worker 自动接入。
+    """
+    record = db.get(FileRecord, file_id)
+    if record is None:
+        raise HTTPException(404, "file not found")
+    chunk_count = db.scalar(select(func.count(DocumentChunk.id)).where(DocumentChunk.file_id == record.id, DocumentChunk.file_hash == record.file_hash)) or 0
+    if chunk_count == 0:
+        key = f"dify-ingest:{record.id}:{record.file_hash}"
+        task = db.scalars(select(Task).where(Task.idempotency_key == key)).first()
+        if task is None:
+            task = create_task(db, type("IngestTask", (), {"kind": "dify_ingest", "idempotency_key": key, "payload": {"file_id": record.id}}))
+        return {"queued": True, "file_id": record.id, "task_id": task.id, "message": "文件尚未解析完成，已排队，解析后自动同步到 Dify 数据集"}
     try:
-        if data.event_type == "retrieval":
-            if data.result_count is None:
-                raise ValueError("retrieval event requires result_count")
-            event = record_flywheel_retrieval(db, type("DifyRetrieval", (), {"idempotency_key": data.idempotency_key, "query": data.query, "result_count": data.result_count, "actor": actor, "metadata": metadata})())
-        else:
-            if data.rating is None:
-                raise ValueError("feedback event requires rating")
-            event = record_flywheel_feedback(db, type("DifyFeedback", (), {"idempotency_key": data.idempotency_key, "query": data.query, "rating": data.rating, "comment": data.comment, "actor": actor, "metadata": metadata})())
+        return dify_client.ingest_file_to_dify(db, file_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"id": event.id, "event_type": event.event_type, "status": "recorded", "actor": event.actor}
 
 
-@app.get("/api/v1/flywheel/gaps", dependencies=[Depends(require_admin)])
-def flywheel_gaps(limit: int = 50, db: Session = Depends(get_db)):
-    return aggregate_flywheel_gaps(db, max(1, min(limit, 200)))
+@app.get("/api/v1/dify/status", dependencies=[Depends(require_admin)])
+def dify_status(db: Session = Depends(get_db)):
+    return dify_client.dify_status(db)
 
 
-@app.post("/api/v1/flywheel/proposals", dependencies=[Depends(require_admin)])
-def flywheel_proposal(query: str, db: Session = Depends(get_db)):
+@app.get("/api/v1/gaps", dependencies=[Depends(require_admin)])
+def gap_list(status: str | None = None, limit: int = 200, db: Session = Depends(get_db)):
+    """待添加清单：常问但知识库未命中参考的问题。"""
+    return list_gap_items(db, status=status, limit=max(1, min(limit, 500)))
+
+
+@app.post("/api/v1/gaps/summarize", dependencies=[Depends(require_admin)])
+def gap_summarize(db: Session = Depends(get_db)):
+    """立即执行一次汇总（把统计窗口内未命中的检索聚合成清单项）。"""
+    window = float(get_effective_setting(db, "gap_summary_interval_hours", settings.gap_summary_interval_hours) or 24)
+    updated = run_gap_summary(db, window_hours=window)
+    return {"updated": updated}
+
+
+@app.patch("/api/v1/gaps/{gap_id}", dependencies=[Depends(require_admin)])
+def gap_update(gap_id: int, data: GapStatusUpdate, db: Session = Depends(get_db)):
     try:
-        proposal = create_flywheel_proposal(db, query)
+        return update_gap_item_status(db, gap_id, data.status, data.note)
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
-    return proposal
+
+
+@app.get("/api/v1/admin/config", dependencies=[Depends(require_admin)])
+def config_get(db: Session = Depends(get_db)):
+    """后台配置总控台：全部可写键的当前生效值（敏感键掩码），以及已有覆盖。"""
+    effective: dict = {}
+    for key, kind in WRITABLE_KEYS.items():
+        value = get_effective_setting(db, key, getattr(settings, key, None))
+        if kind == "secret" and value:
+            effective[key] = mask_secret(str(value))
+        else:
+            effective[key] = value
+    return {"effective": effective, "overrides": list_overrides(db), "writable": sorted(WRITABLE_KEYS)}
+
+
+@app.post("/api/v1/admin/config", dependencies=[Depends(require_admin)])
+def config_set(data: ConfigUpdate, db: Session = Depends(get_db)):
+    try:
+        set_override(db, data.key, data.value)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "key": data.key}
 
 
 @app.post("/api/v1/alerts/{alert_id}/ack", dependencies=[Depends(require_admin)])
@@ -603,12 +639,6 @@ def mobile_nodes(db: Session = Depends(get_db)):
 @app.get("/api/v1/mobile/alerts", dependencies=[Depends(require_mobile)])
 def mobile_alerts(db: Session = Depends(get_db)):
     return db.scalars(select(Alert).where(Alert.status.in_(["open", "acknowledged"])).order_by(Alert.last_seen_at.desc()).limit(100)).all()
-
-
-@app.get("/api/v1/mobile/flywheel/gaps", dependencies=[Depends(require_mobile)])
-def mobile_flywheel_gaps(limit: int = 20, db: Session = Depends(get_db)):
-    """Read-only flywheel gap summary reserved for the future mobile console."""
-    return aggregate_flywheel_gaps(db, max(1, min(limit, 50)))
 
 
 @app.post("/api/v1/mobile/commands", dependencies=[Depends(require_mobile)])

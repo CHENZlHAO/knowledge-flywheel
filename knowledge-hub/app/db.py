@@ -37,8 +37,8 @@ def initialize_database() -> None:
         columns_by_table = {
             "remote_commands": {"claimed_at": "DATETIME"},
             "tasks": {"result_json": "TEXT", "claimed_at": "DATETIME", "claimed_by": "VARCHAR(128)"},
-            "files": {"alive": "BOOLEAN NOT NULL DEFAULT 1", "last_seen_at": "DATETIME"},
-            "document_chunks": {"file_hash": "VARCHAR(128) NOT NULL DEFAULT ''", "embedding": "TEXT", "embedding_provider": "VARCHAR(32)", "embedding_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'", "embedded_at": "DATETIME"},
+            "files": {"alive": "BOOLEAN NOT NULL DEFAULT 1", "last_seen_at": "DATETIME", "category": "VARCHAR(128) NOT NULL DEFAULT '未分类'"},
+            "document_chunks": {"file_hash": "VARCHAR(128) NOT NULL DEFAULT ''", "embedding": "TEXT", "embedding_provider": "VARCHAR(32)", "embedding_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'", "embedded_at": "DATETIME", "hit_count": "INTEGER NOT NULL DEFAULT 0"},
         }
         inspector = inspect(engine)
         with engine.begin() as connection:
@@ -54,6 +54,7 @@ def initialize_database() -> None:
     if backend == "postgresql":
         statements = (
             "ALTER TABLE files ADD COLUMN IF NOT EXISTS alive BOOLEAN NOT NULL DEFAULT true",
+            "ALTER TABLE files ADD COLUMN IF NOT EXISTS category VARCHAR(128) NOT NULL DEFAULT '未分类'",
             "ALTER TABLE files ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ",
             "UPDATE files SET last_seen_at = COALESCE(last_seen_at, updated_at, now()) WHERE last_seen_at IS NULL",
             "ALTER TABLE files ALTER COLUMN last_seen_at SET DEFAULT now()",
@@ -67,6 +68,7 @@ def initialize_database() -> None:
             "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding_provider VARCHAR(32)",
             "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding_status VARCHAR(32) NOT NULL DEFAULT 'pending'",
             "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedded_at TIMESTAMPTZ",
+            "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS hit_count INTEGER NOT NULL DEFAULT 0",
             "UPDATE document_chunks SET file_hash = files.file_hash FROM files WHERE document_chunks.file_id = files.id AND document_chunks.file_hash = ''",
         )
         with engine.begin() as connection:

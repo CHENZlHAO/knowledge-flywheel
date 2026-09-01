@@ -49,6 +49,9 @@ type Config struct {
 	MQTTCAFile        string
 	MQTTClientCert    string
 	MQTTClientKey     string
+	WebListen         string
+	WebToken          string
+	SearchAPIKey      string
 	Once              bool
 	Service           string
 }
@@ -109,6 +112,9 @@ func main() {
 	flag.StringVar(&cfg.MQTTCAFile, "mqtt-ca-file", "", "PEM CA certificate used to verify the MQTT broker")
 	flag.StringVar(&cfg.MQTTClientCert, "mqtt-client-cert", "", "PEM client certificate for mutual TLS")
 	flag.StringVar(&cfg.MQTTClientKey, "mqtt-client-key", "", "PEM client private key for mutual TLS")
+	flag.StringVar(&cfg.WebListen, "web-listen", "127.0.0.1:9090", "web console listen address; empty disables")
+	flag.StringVar(&cfg.WebToken, "web-token", "", "web console access token; empty generates a random one")
+	flag.StringVar(&cfg.SearchAPIKey, "search-api-key", "", "knowledge hub search API key for proxied search")
 	flag.BoolVar(&cfg.Once, "once", false, "run one heartbeat/file-report cycle and exit")
 	flag.StringVar(&cfg.Service, "service", "", "Windows service command: install | uninstall | run")
 	flag.Parse()
@@ -142,6 +148,14 @@ func runForeground(cfg Config) error {
 func runAgentLoop(cfg Config, stop <-chan struct{}) error {
 	client := &http.Client{Timeout: 10 * time.Second}
 	ctx := context.Background()
+	token := cfg.WebToken
+	if token == "" && cfg.WebListen != "" {
+		if generated, genErr := generateWebToken(); genErr == nil {
+			token = generated
+		}
+	}
+	web := newWebServer(cfg, client, token)
+	web.start()
 	mqttClient, err := connectMQTT(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mqtt:", err)

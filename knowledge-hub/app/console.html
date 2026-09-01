@@ -1,90 +1,1006 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>知识飞轮控制台</title>
-<style>body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#f4f6f8;color:#18212b}header{background:#123047;color:#fff;padding:20px 28px}main{max-width:1180px;margin:24px auto;padding:0 20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}.card{background:#fff;border:1px solid #dce3e8;border-radius:6px;padding:18px;box-shadow:0 1px 2px #0000000c}.metric{font-size:28px;font-weight:700;margin-top:8px}.muted{color:#61717f;font-size:13px}.danger{color:#a62929}.ok{color:#197248}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;margin-top:14px;min-width:720px}td,th{text-align:left;padding:10px;border-bottom:1px solid #e6ebef;font-size:14px;white-space:nowrap}button{border:1px solid #8ba0af;background:#fff;color:#123047;border-radius:4px;padding:6px 10px;cursor:pointer}button:hover{background:#edf3f6}button:disabled{cursor:wait;opacity:.6}@media(max-width:600px){header{padding:16px}header span{display:block;float:none!important;margin-top:5px}main{margin:14px auto;padding:0 12px}.card{padding:14px}}</style></head>
-<body><header><strong>企业知识飞轮</strong><span style="float:right" class="muted">中心运维控制台　管理员密钥 <input id="adminKey" type="password" placeholder="生产环境填写 X-Admin-Key" onchange="localStorage.setItem('adminKey',this.value)" style="padding:6px;border-radius:4px;border:1px solid #8ba0af"></span></header><main>
-<div class="grid"><div class="card"><div class="muted">在线节点</div><div id="nodes" class="metric">-</div></div><div class="card"><div class="muted">文件总数</div><div id="files" class="metric">-</div></div><div class="card"><div class="muted">副本策略健康率</div><div id="health" class="metric">-</div></div><div class="card"><div class="muted">待处理任务</div><div id="tasks" class="metric">-</div></div><div class="card"><div class="muted">未关闭告警</div><div id="alerts" class="metric">-</div></div></div>
-<section class="card" style="margin-top:18px"><h2>节点状态</h2><div class="table-wrap"><table><thead><tr><th>节点</th><th>状态</th><th>副本节点</th><th>CPU</th><th>最后心跳</th></tr></thead><tbody id="nodeRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>文件流水线</h2><div class="table-wrap"><table><thead><tr><th>路径</th><th>来源节点</th><th>文件状态</th><th>健康副本</th><th>登记任务</th><th>解析任务</th><th>向量任务</th><th>向量状态</th><th>切片数</th><th>更新时间</th></tr></thead><tbody id="fileRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>知识检索验证</h2><p class="muted">用于主机端验证向量检索。结果会显示真实 Ollama 或确定性降级状态，并自动写入飞轮检索事件。</p><div style="display:flex;gap:10px;flex-wrap:wrap"><input id="searchQuery" maxlength="4000" placeholder="输入制度、流程或知识问题" style="flex:1;min-width:260px;padding:9px;border:1px solid #8ba0af;border-radius:4px"><input id="searchTopK" type="number" min="1" max="20" value="5" style="width:70px;padding:9px;border:1px solid #8ba0af;border-radius:4px"><button onclick="runSearch(this)">检索</button></div><div id="searchStatus" class="muted" style="margin-top:12px">等待检索</div><div class="table-wrap"><table><thead><tr><th>文件</th><th>版本</th><th>切片</th><th>相似度</th><th>向量状态</th><th>内容</th></tr></thead><tbody id="searchRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>副本策略</h2><div id="policyStatus" class="muted">正在读取配置...</div><div class="table-wrap"><table><thead><tr><th>任务</th><th>文件/目标</th><th>状态</th><th>错误</th><th>操作</th></tr></thead><tbody id="repairRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>固定副本池</h2><div class="table-wrap"><table><thead><tr><th>文件</th><th>节点</th><th>副本状态</th><th>哈希</th><th>最后上报</th></tr></thead><tbody id="replicaRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>告警中心</h2><div class="table-wrap"><table><thead><tr><th>等级</th><th>类型</th><th>资源</th><th>状态</th><th>信息</th><th>最近发生</th><th>操作</th></tr></thead><tbody id="alertRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>数据飞轮</h2><p class="muted">基于用户反馈和检索无结果事件聚合知识缺口。生成的 Proposal 仍需在提案审核台人工批准。</p><div class="table-wrap"><table><thead><tr><th>查询</th><th>检索次数</th><th>无结果</th><th>负反馈</th><th>正反馈</th><th>分数</th><th>最近发生</th><th>操作</th></tr></thead><tbody id="flywheelRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>提案审核</h2><p class="muted">所有规则或 AI 提案都必须由管理员明确批准或拒绝，批准动作会写入审计日志。</p><div class="table-wrap"><table><thead><tr><th>标题</th><th>类型</th><th>状态</th><th>创建者</th><th>创建时间</th><th>审核人</th><th>操作</th></tr></thead><tbody id="proposalRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>编排与安全状态</h2><div id="systemStatus" class="muted">读取中...</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><input id="dshFileId" type="number" placeholder="已解析文件 ID" style="width:160px;padding:8px"><button onclick="runDshReview(this)">触发 DSH 文档审核</button></div><div id="dshStatus" class="muted" style="margin-top:8px"></div></section>
-<section class="card" style="margin-top:18px"><h2>告警投递</h2><p class="muted">邮件 / Webhook / 企业微信 / 钉钉的持久化投递记录；失败自动重试，超限进入死信，窗口内重复告警抑制。</p><div id="deliverySummary" class="muted"></div><div class="table-wrap"><table><thead><tr><th>告警</th><th>渠道</th><th>状态</th><th>尝试</th><th>最近错误</th><th>发送时间</th></tr></thead><tbody id="deliveryRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>二进制对象存储</h2><p class="muted">PDF / Word / 图片 / 压缩包等按字节存储，校验 SHA-256 后经独立下载网关提供。上传需提供已登记的文件 ID 与来源节点。</p><div style="display:flex;gap:10px;flex-wrap:wrap"><input id="blobFileId" type="number" placeholder="文件 ID" style="width:120px;padding:8px"><input id="blobNodeId" placeholder="来源节点 ID" style="width:180px;padding:8px"><input id="blobFile" type="file"><button onclick="uploadBlob(this)">上传二进制</button></div><div id="blobStatus" class="muted" style="margin-top:8px"></div><div class="table-wrap"><table><thead><tr><th>文件 ID</th><th>哈希</th><th>MIME</th><th>大小</th><th>存储后端</th><th>创建时间</th></tr></thead><tbody id="blobRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>API 密钥与 RBAC</h2><p class="muted">数据库密钥支持角色、轮换、撤销与过期；明文只在创建时显示一次。生产环境也可使用 Bearer JWT。</p><div style="display:flex;gap:10px;flex-wrap:wrap"><select id="keyRole"><option value="admin">admin</option><option value="node">node</option><option value="mobile">mobile</option><option value="search">search</option><option value="flywheel">flywheel</option><option value="download">download</option><option value="mqtt_bridge">mqtt_bridge</option></select><input id="keyLabel" placeholder="标签" style="width:180px;padding:8px"><button onclick="createKey(this)">创建密钥</button></div><div id="keyResult" class="muted" style="margin-top:8px"></div><div class="table-wrap"><table><thead><tr><th>Key ID</th><th>角色</th><th>标签</th><th>状态</th><th>最近使用</th><th>过期</th><th>操作</th></tr></thead><tbody id="keyRows"></tbody></table></div></section>
-<section class="card" style="margin-top:18px"><h2>备份与恢复</h2><p class="muted">一键执行中心备份（数据库转储 + 对象存储归档 + 清单）。恢复使用 scripts/restore.sh，目标 RPO/RTO 见运维文档。</p><button onclick="runBackup(this)">立即备份</button><div id="backupStatus" class="muted" style="margin-top:8px"></div><div class="table-wrap"><table><thead><tr><th>备份 ID</th><th>时间</th><th>数据库</th><th>文件</th><th>保留清理</th></tr></thead><tbody id="backupRows"></tbody></table></div></section>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>企业知识飞轮 · 中心控制台</title>
+<style>
+:root {
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-subtle: #eff6ff;
+  --primary-border: #bfdbfe;
+  --primary-glow: rgba(37, 99, 235, 0.18);
+  --ink: #0f172a;
+  --ink-secondary: #334155;
+  --muted: #64748b;
+  --muted-light: #94a3b8;
+  --line: #e2e8f0;
+  --line-subtle: #f1f5f9;
+  --bg: #f8fafc;
+  --card: #ffffff;
+  --ok: #10b981;
+  --ok-bg: #ecfdf5;
+  --ok-border: #a7f3d0;
+  --warn: #f59e0b;
+  --warn-bg: #fffbeb;
+  --warn-border: #fde68a;
+  --danger: #ef4444;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --nav-bg: #090d16;
+  --nav-border: #1e293b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 9999px;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.04), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-hover: 0 10px 20px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
+  --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+/* Header */
+header {
+  background: linear-gradient(135deg, #090d16 0%, #0f172a 50%, #1e293b 100%);
+  color: #fff;
+  padding: 16px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--nav-border);
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 12px rgba(59,130,246,0.5);
+}
+.brand-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.brand {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand span {
+  font-weight: 500;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #94a3b8;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  padding-right: 8px;
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--ok);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--ok);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 12px var(--ok); }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+header input {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 8px 12px;
+  width: 230px;
+  font-size: 0.85rem;
+  transition: var(--transition);
+}
+header input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+header input::placeholder { color: #64748b; }
+
+/* Navigation */
+nav {
+  background: var(--nav-bg);
+  display: flex;
+  gap: 2px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--nav-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+nav::-webkit-scrollbar { display: none; }
+nav button {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  padding: 14px 16px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+nav button:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.03);
+}
+nav button.active {
+  color: #fff;
+  font-weight: 600;
+  border-bottom-color: var(--primary);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+/* Main Container */
+main {
+  max-width: 1220px;
+  margin: 24px auto;
+  padding: 0 20px 60px;
+}
+
+/* Modules & Animations */
+.module { display: none; }
+.module.active {
+  display: block;
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Cards & Grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+  transition: var(--transition);
+}
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+.card h3 {
+  margin: 0 0 14px 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card h3::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+/* Metrics */
+.metric {
+  position: relative;
+  overflow: hidden;
+  border-top: 3px solid var(--primary);
+}
+.metric .muted {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.metric .num {
+  font-size: 1.95rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-top: 8px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* Typography & Status Colors */
+.muted { color: var(--muted); font-size: 0.86rem; line-height: 1.6; }
+.ok { color: var(--ok); font-weight: 600; }
+.warn { color: var(--warn); font-weight: 600; }
+.danger { color: var(--danger); font-weight: 600; }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.74rem;
+  font-weight: 500;
+  background: var(--primary-subtle);
+  color: var(--primary);
+  border: 1px solid var(--primary-border);
+  text-decoration: none;
+  transition: var(--transition);
+}
+.badge:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Tables */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  margin-top: 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+  text-align: left;
+}
+thead {
+  background: #f8fafc;
+}
+th {
+  color: var(--muted);
+  font-weight: 600;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-subtle);
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fafc; }
+
+/* Buttons */
+button {
+  background: var(--primary);
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.15);
+  transition: var(--transition);
+}
+button:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+button.ghost {
+  background: #fff;
+  color: var(--ink-secondary);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+button.ghost:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: var(--muted-light);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+button.small {
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+button.danger {
+  background: var(--danger);
+  box-shadow: 0 1px 2px rgba(239, 68, 68, 0.15);
+}
+button.danger:hover:not(:disabled) {
+  background: #dc2626;
+  box-shadow: 0 3px 8px rgba(239, 68, 68, 0.25);
+}
+
+/* Form Controls */
+input, select {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  color: var(--ink);
+  transition: var(--transition);
+}
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+input::placeholder { color: var(--muted-light); }
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.row input { flex: 1; min-width: 200px; }
+.row input[type=number] { flex: 0 0 100px; }
+.row input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* Proposal & Code */
+.proposal-body {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  word-break: break-word;
+  color: var(--ink-secondary);
+}
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #f1f5f9;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  border: 1px solid var(--line);
+  color: var(--primary);
+}
+
+/* Reserved Slots */
+.reserved {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.reserved .card {
+  flex: 1;
+  min-width: 260px;
+  border: 1px dashed var(--muted-light);
+  background: rgba(248, 250, 252, 0.6);
+}
+
+@media(max-width: 768px) {
+  header { flex-direction: column; align-items: stretch; padding: 16px 20px; }
+  .header-right { flex-direction: column; align-items: stretch; }
+  header input { width: 100%; }
+  nav { padding: 0 10px; }
+  .grid { grid-template-columns: repeat(2, 1fr); }
+  .row { flex-direction: column; align-items: stretch; }
+  .row input, .row select { width: 100%; flex: 1 1 100% !important; }
+}
+
+/* ===== 新手动画教学 ===== */
+#tutorialOverlay{position:fixed;inset:0;z-index:1000;display:none}
+#tutorialOverlay.show{display:block}
+#tutorialBackdrop{position:absolute;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);cursor:pointer}
+#tutorialHighlight{position:absolute;border:2px solid #2563eb;border-radius:10px;pointer-events:none;transition:all .3s ease;animation:tutPulse 1.6s infinite}
+@keyframes tutPulse{0%,100%{box-shadow:0 0 0 4px rgba(37,99,235,.25),0 0 24px rgba(37,99,235,.45)}50%{box-shadow:0 0 0 8px rgba(37,99,235,.12),0 0 32px rgba(37,99,235,.6)}}
+#tutorialCard{position:absolute;z-index:1001;width:340px;max-width:calc(100vw - 32px);background:#fff;border:1px solid #dbe3f5;border-radius:14px;box-shadow:0 20px 50px rgba(15,23,42,.35);overflow:hidden;animation:tutCardIn .3s ease}
+@keyframes tutCardIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+#tutorialCard .tut-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f8fafc;border-bottom:1px solid #eef2f7;font-size:12px;color:#64748b}
+#tutorialCard .tut-head a{color:#dc2626;text-decoration:none}
+#tutorialCard .tut-body{padding:16px}
+#tutorialCard h4{margin:0 0 8px;font-size:15px;font-weight:700;color:#0f172a}
+#tutorialCard p{margin:0;font-size:13px;line-height:1.7;color:#334155}
+#tutorialCard .tut-foot{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid #eef2f7}
+#tutorialCard button{background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+#tutorialCard button.ghost{background:#fff;color:#475569;border:1px solid #e2e8f0}
+#tutorialCard .tut-dots{display:flex;gap:6px}
+#tutorialCard .tut-dots i{width:7px;height:7px;border-radius:50%;background:#e2e8f0;display:block}
+#tutorialCard .tut-dots i.on{background:#2563eb}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand-wrapper">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+    </div>
+    <div class="brand">企业知识飞轮 <span>中心控制台</span></div>
+  </div>
+  <div class="header-right">
+    <div class="live-indicator">
+      <div class="pulse-dot"></div>
+      <span>节点网络协同中</span>
+    </div>
+    <input id="adminKey" type="password" placeholder="生产环境填写 X-Admin-Key" onchange="localStorage.setItem('adminKey',this.value)">
+  </div>
+</header>
+
+<nav id="nav">
+  <button class="active" data-module="overview">总览</button>
+  <button data-module="files">文件管理</button>
+  <button data-module="search">知识检索</button>
+  <button data-module="gaps">待添加清单</button>
+  <button data-module="proposals">提案审核</button>
+  <button data-module="alerts">告警</button>
+  <button data-module="replicas">副本</button>
+  <button data-module="system">系统与安全</button>
+  <button data-module="config">后台配置</button>
+  <button data-module="reserved">预留模块</button>
+</nav>
+
+<main>
+
+<section id="module-overview" class="module active">
+  <div class="grid">
+    <div class="card metric"><div class="muted">在线节点</div><div id="mNodes" class="num">-</div></div>
+    <div class="card metric"><div class="muted">文件总数</div><div id="mFiles" class="num">-</div></div>
+    <div class="card metric"><div class="muted">副本策略健康率</div><div id="mHealth" class="num">-</div></div>
+    <div class="card metric"><div class="muted">待处理任务</div><div id="mTasks" class="num">-</div></div>
+    <div class="card metric"><div class="muted">未关闭告警</div><div id="mAlerts" class="num">-</div></div>
+  </div>
+  <div class="card">
+    <h3>节点状态</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>节点</th><th>状态</th><th>副本节点</th><th>CPU</th><th>最后心跳</th></tr></thead>
+        <tbody id="nodeRows"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>编排与安全状态</h3>
+    <div id="systemStatus" class="muted">读取中...</div>
+  </div>
+  <div class="card">
+    <h3>最近告警</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>等级</th><th>类型</th><th>资源</th><th>状态</th><th>信息</th><th>操作</th></tr></thead>
+        <tbody id="alertRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-files" class="module">
+  <div class="card">
+    <h3>文件管理</h3>
+    <div class="row">
+      <select id="fileCategoryFilter" style="flex:0 0 160px"><option value="">全部分区</option></select>
+      <input id="fileSearch" placeholder="按路径/名称搜索…">
+      <button class="ghost" onclick="loadFiles()">刷新</button>
+      <button class="ghost" onclick="ingestAllToDify(this)">全部同步到 Dify</button>
+    </div>
+    <div id="difyStatus" class="muted" style="margin-bottom:8px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>分区</th><th>路径</th><th>来源节点</th><th>状态</th><th>大小</th><th>切片</th><th>向量</th><th>健康副本</th><th>更新时间</th><th>操作</th></tr></thead>
+        <tbody id="fileRows"></tbody>
+      </table>
+    </div>
+    <div id="fileDetail" class="muted" style="margin-top:14px"></div>
+  </div>
+</section>
+
+<section id="module-search" class="module">
+  <div class="card">
+    <h3>知识检索验证</h3>
+    <div class="row">
+      <input id="searchQuery" placeholder="输入制度、流程或知识问题" maxlength="4000">
+      <select id="searchCat" style="flex:0 0 160px"><option value="">全部分区</option></select>
+      <input id="searchTopK" type="number" min="1" max="20" value="5">
+      <button onclick="runSearch(this)">检索</button>
+    </div>
+    <div id="searchStatus" class="muted" style="margin-bottom:8px">等待检索</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>分区</th><th>文件</th><th>切片</th><th>相似度</th><th>热度</th><th>参考链接</th><th>内容</th></tr></thead>
+        <tbody id="searchRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-gaps" class="module">
+  <div class="card">
+    <h3>待添加清单 · 常问但知识库未命中</h3>
+    <p class="muted">由检索日志定期汇总生成（间隔见后台配置）；点击「标记已添加」表示问题已补入知识库。</p>
+    <div style="margin: 12px 0;">
+      <button class="ghost" onclick="runGapSummarize(this)">立即汇总</button>
+      <span id="gapMeta" class="muted" style="margin-left:12px"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>问题</th><th>提问次数</th><th>未命中次数</th><th>状态</th><th>最近提问</th><th>操作</th></tr></thead>
+        <tbody id="gapRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-proposals" class="module">
+  <div class="card">
+    <h3>提案审核</h3>
+    <p class="muted">点击标题查看提案完整内容后，再批准或拒绝；批准动作写入审计日志。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>标题</th><th>类型</th><th>状态</th><th>创建者</th><th>创建时间</th><th>审核人</th><th>操作</th></tr></thead>
+        <tbody id="proposalRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-alerts" class="module">
+  <div class="card">
+    <h3>告警中心</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>等级</th><th>类型</th><th>资源</th><th>状态</th><th>信息</th><th>最近发生</th><th>操作</th></tr></thead>
+        <tbody id="alertRows2"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>告警投递</h3>
+    <div id="deliverySummary" class="muted" style="margin-bottom:8px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>告警</th><th>渠道</th><th>状态</th><th>尝试</th><th>最近错误</th><th>发送时间</th></tr></thead>
+        <tbody id="deliveryRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-replicas" class="module">
+  <div class="card">
+    <h3>副本策略</h3>
+    <div id="policyStatus" class="muted" style="margin-bottom:8px">读取中...</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>任务</th><th>文件/目标</th><th>状态</th><th>错误</th><th>操作</th></tr></thead>
+        <tbody id="repairRows"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>固定副本池</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件</th><th>节点</th><th>副本状态</th><th>哈希</th><th>最后上报</th></tr></thead>
+        <tbody id="replicaRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-system" class="module">
+  <div class="card">
+    <h3>DSH 文档审核</h3>
+    <div class="row">
+      <input id="dshFileId" type="number" placeholder="已解析文件 ID" style="flex:0 0 180px">
+      <button onclick="runDshReview(this)">触发 DSH 审核</button>
+    </div>
+    <div id="dshStatus" class="muted"></div>
+  </div>
+  <div class="card">
+    <h3>API 密钥与 RBAC</h3>
+    <div class="row">
+      <select id="keyRole" style="flex:0 0 160px">
+        <option>admin</option>
+        <option>node</option>
+        <option>mobile</option>
+        <option>search</option>
+        <option>flywheel</option>
+        <option>download</option>
+        <option>mqtt_bridge</option>
+      </select>
+      <input id="keyLabel" placeholder="标签" style="flex:0 0 180px">
+      <button onclick="createKey(this)">创建密钥</button>
+    </div>
+    <div id="keyResult" class="muted" style="margin-bottom:8px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Key ID</th><th>角色</th><th>标签</th><th>状态</th><th>最近使用</th><th>过期</th><th>操作</th></tr></thead>
+        <tbody id="keyRows"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>备份与恢复</h3>
+    <button onclick="runBackup(this)">立即备份</button>
+    <div id="backupStatus" class="muted" style="margin-top:10px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>备份 ID</th><th>时间</th><th>数据库</th><th>文件</th><th>保留清理</th></tr></thead>
+        <tbody id="backupRows"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <h3>二进制对象存储</h3>
+    <div class="row">
+      <input id="blobFileId" type="number" placeholder="文件 ID" style="flex:0 0 120px">
+      <input id="blobNodeId" placeholder="来源节点 ID" style="flex:0 0 180px">
+      <input id="blobFile" type="file">
+      <button onclick="uploadBlob(this)">上传二进制</button>
+    </div>
+    <div id="blobStatus" class="muted" style="margin-bottom:8px"></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>文件 ID</th><th>哈希</th><th>MIME</th><th>大小</th><th>存储后端</th><th>创建时间</th></tr></thead>
+        <tbody id="blobRows"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="module-config" class="module">
+  <div class="card">
+    <h3>后台配置总控台</h3>
+    <div class="grid">
+      <div class="card" style="box-shadow:none;border-color:var(--line)">
+        <h3 style="font-size:0.95rem">Dify 问答</h3>
+        <div class="row"><label style="min-width:130px" class="muted">Base URL</label><input id="cfgDifyBase" placeholder="http://localhost"></div>
+        <div class="row"><label style="min-width:130px" class="muted">API Key</label><input id="cfgDifyKey" placeholder="app-xxxx（掩码显示）"></div>
+        <div class="row"><label style="min-width:130px" class="muted">数据集 ID</label><input id="cfgDataset" placeholder="Dify 数据集 ID"></div>
+        <div class="row"><label style="min-width:130px" class="muted">严格接地（无参考拒绝）</label><input id="cfgStrict" type="checkbox" checked></div>
+        <div class="row"><label style="min-width:130px" class="muted">最低相似度</label><input id="cfgMinScore" type="number" step="0.01" value="0"></div>
+        <button class="ghost" onclick="testDify(this)">测试 Dify 连接</button>
+      </div>
+      <div class="card" style="box-shadow:none;border-color:var(--line)">
+        <h3 style="font-size:0.95rem">检索与汇总</h3>
+        <div class="row"><label style="min-width:130px" class="muted">热度加权</label><input id="cfgBoost" type="checkbox" checked></div>
+        <div class="row"><label style="min-width:130px" class="muted">加权系数</label><input id="cfgBoostWeight" type="number" step="0.1" value="1"></div>
+        <div class="row"><label style="min-width:130px" class="muted">汇总周期(小时)</label><input id="cfgGapHours" type="number" step="1" value="24"></div>
+        <button onclick="saveConfig(this)">保存全部配置</button>
+        <div id="cfgStatus" class="muted" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>问答联调（RAG 代理）</h3>
+    <p class="muted">走 /api/v1/rag/chat：未命中参考时严格模式会拒绝回答；命中时返回参考链接。</p>
+    <div class="row">
+      <input id="cfgChatQuery" placeholder="输入问题，验证严格接地与参考链接">
+      <button class="ghost" onclick="quickChat(this)">提问</button>
+    </div>
+    <div id="cfgChatResult" class="muted" style="white-space:normal;line-height:1.7"></div>
+  </div>
+</section>
+
+<section id="module-reserved" class="module">
+  <div class="reserved">
+    <div class="card"><h3>📊 数据看板</h3><p class="muted">预留模块：接入可视化看板（趋势 / 成本 / 检索质量）。入口已预留，待接入前端与数据接口。</p></div>
+    <div class="card"><h3>🔌 自定义模块</h3><p class="muted">预留模块：在此挂接新的业务面板，复用现有鉴权与接口。</p></div>
+    <div class="card"><h3>🤖 智能体能力</h3><p class="muted">预留模块：DSH 审核、Dify 问答、LangGraph 编排等能力面板。</p></div>
+  </div>
+</section>
+
+<!-- 新手动画教学（每次打开显示，可跳过） -->
+<div id="tutorialOverlay">
+  <div id="tutorialBackdrop" onclick="tutorialSkip()"></div>
+  <div id="tutorialHighlight"></div>
+  <div id="tutorialCard">
+    <div class="tut-head"><span id="tutorialStepNo">第 1 / 12 步</span><a href="javascript:void(0)" onclick="tutorialSkip()">跳过教程 ✕</a></div>
+    <div class="tut-body"><h4 id="tutorialTitle"></h4><p id="tutorialDesc"></p></div>
+    <div class="tut-foot">
+      <button class="ghost" id="tutorialPrev" onclick="tutorialStep(-1)">上一步</button>
+      <div class="tut-dots" id="tutorialDots"></div>
+      <button id="tutorialNext" onclick="tutorialStep(1)">下一步 →</button>
+    </div>
+  </div>
+</div>
+</main>
+
 <script>
 const rawFetch=window.fetch.bind(window);
+const $=s=>document.querySelector(s);
+const $$=s=>document.querySelectorAll(s);
 function authHeaders(){const k=localStorage.getItem('adminKey');return k?{'X-Admin-Key':k}:{}}
-async function api(path,options={}){options.headers={...authHeaders(),...(options.headers||{})};return rawFetch(path,options)}
-function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function payload(task){try{return JSON.parse(task.payload_json||'{}')}catch{return{}}}
-async function retryRepair(id,button){button.disabled=true;try{const response=await api(`/api/v1/replica-repairs/${id}/retry`,{method:'POST'});if(!response.ok)throw new Error((await response.json()).detail||response.statusText);await load()}catch(error){alert(`重试失败：${error.message}`)}finally{button.disabled=false}}
-async function alertAction(id,action){const response=await api(`/api/v1/alerts/${id}/${action}`,{method:'POST'});if(!response.ok)throw new Error((await response.json()).detail||response.statusText);await load()}
-async function createFlywheelProposal(query,button){button.disabled=true;try{const response=await api(`/api/v1/flywheel/proposals?query=${encodeURIComponent(query)}`,{method:'POST'});if(!response.ok)throw new Error((await response.json()).detail||response.statusText);button.textContent='已生成草案';await load()}catch(error){alert(`生成提案失败：${error.message}`)}finally{button.disabled=false}}
-async function reviewProposal(id,decision,button){button.disabled=true;try{const response=await api(`/api/v1/proposals/${id}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,reviewer:'console-admin'})});if(!response.ok)throw new Error((await response.json()).detail||response.statusText);await load()}catch(error){alert(`审核失败：${error.message}`)}finally{button.disabled=false}}
-async function runSearch(button){const query=document.querySelector('#searchQuery').value.trim();if(!query)return;button.disabled=true;try{const response=await api('/api/v1/knowledge/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query,top_k:Number(document.querySelector('#searchTopK').value)||5,idempotency_key:`console-${Date.now()}`})});if(!response.ok)throw new Error((await response.json()).detail||response.statusText);const data=await response.json();document.querySelector('#searchStatus').textContent=`${data.count} 条结果；查询向量：${data.embedding_provider} / ${data.embedding_status}${data.count?'':'；已作为无结果事件进入飞轮'}`;document.querySelector('#searchRows').innerHTML=data.results.map(x=>`<tr><td>${esc(x.path)}</td><td>${x.version}</td><td>${x.chunk_index}</td><td>${Number(x.score).toFixed(4)}</td><td>${esc(x.embedding_provider)} / ${esc(x.embedding_status)}</td><td style="white-space:normal;min-width:320px">${esc(x.content)}</td></tr>`).join('')}catch(error){document.querySelector('#searchStatus').innerHTML=`<span class="danger">检索失败：${esc(error.message)}</span>`}finally{button.disabled=false}}
-async function load(){
-  try{
-    const [n,f,t,p,r,policy,repairs,alerts,gaps,proposals]=await Promise.all([api('/api/v1/nodes').then(x=>x.json()),api('/api/v1/files/summary').then(x=>x.json()),api('/api/v1/tasks').then(x=>x.json()),api('/api/v1/pipeline/files').then(x=>x.json()),api('/api/v1/replicas').then(x=>x.json()),api('/api/v1/replica-policy/health').then(x=>x.json()),api('/api/v1/replica-repairs').then(x=>x.json()),api('/api/v1/alerts').then(x=>x.json()),api('/api/v1/flywheel/gaps').then(x=>x.json()),api('/api/v1/proposals').then(x=>x.json())]);
-    document.querySelector('#nodes').textContent=n.filter(x=>x.status==='online').length;document.querySelector('#files').textContent=f.total;document.querySelector('#health').textContent=(policy.health_rate*100).toFixed(1)+'%';document.querySelector('#health').className=`metric ${policy.invalid_nodes.length||policy.failed_repairs?'danger':'ok'}`;document.querySelector('#tasks').textContent=t.filter(x=>['pending','running','waiting','failed'].includes(x.status)).length;
-    document.querySelector('#alerts').textContent=alerts.filter(x=>x.status!=='resolved').length;document.querySelector('#alerts').className=`metric ${alerts.some(x=>x.status==='open'&&x.severity==='high')?'danger':'ok'}`;
-    document.querySelector('#nodeRows').innerHTML=n.map(x=>`<tr><td>${esc(x.hostname)}</td><td>${esc(x.status)}</td><td>${x.is_replica?'是':'否'}</td><td>${Number(x.cpu_percent).toFixed(1)}%</td><td>${new Date(x.last_seen_at).toLocaleString()}</td></tr>`).join('');
-    document.querySelector('#fileRows').innerHTML=p.map(x=>`<tr><td>${esc(x.path)}</td><td>${esc(x.source_node_id)}</td><td>${esc(x.status)}${x.alive?'':' (缺失)'}</td><td>${x.replica_count}</td><td>${esc(x.register_task_status||'-')}</td><td>${esc(x.parse_task_status||'-')}</td><td>${esc(x.embed_task_status||'-')}</td><td>${esc(x.embedding_provider||'-')} / ${esc(x.embedding_status||'-')} (${x.embedded_chunk_count}/${x.chunk_count})</td><td>${x.chunk_count}</td><td>${new Date(x.updated_at).toLocaleString()}</td></tr>`).join('');
-    const invalid=policy.invalid_nodes.length?`；无效节点：${policy.invalid_nodes.map(esc).join('、')}`:'';document.querySelector('#policyStatus').innerHTML=`已启用 ${policy.valid_nodes.length} 个固定副本节点，健康 ${policy.healthy_replicas}/${policy.expected_replicas}，待处理 ${policy.pending_repairs}，失败 ${policy.failed_repairs}<span class="danger">${invalid}</span>`;
-    document.querySelector('#repairRows').innerHTML=repairs.map(x=>{const d=payload(x);return`<tr><td>#${x.id}</td><td>文件 ${esc(d.file_id||'-')} / ${esc(d.target_node_id||'-')}</td><td>${esc(x.status)}</td><td class="danger">${esc(x.error||'-')}</td><td>${x.status==='failed'?`<button onclick="retryRepair(${x.id},this)">重试</button>`:'-'}</td></tr>`}).join('');
-    document.querySelector('#replicaRows').innerHTML=r.map(x=>`<tr><td>${x.file_id}</td><td>${esc(x.node_id)}</td><td>${esc(x.status)}</td><td>${esc(x.file_hash.slice(0,12))}...</td><td>${new Date(x.last_seen_at).toLocaleString()}</td></tr>`).join('');
-    document.querySelector('#alertRows').innerHTML=alerts.map(x=>`<tr><td class="${x.severity==='high'?'danger':''}">${esc(x.severity)}</td><td>${esc(x.kind)}</td><td>${esc(x.resource_type)}:${esc(x.resource_id)}</td><td>${esc(x.status)}</td><td>${esc(x.message)}</td><td>${new Date(x.last_seen_at).toLocaleString()}</td><td>${x.status==='open'?`<button onclick="alertAction(${x.id},'ack')">确认</button>`:''}${x.status!=='resolved'?` <button onclick="alertAction(${x.id},'resolve')">关闭</button>`:'-'}</td></tr>`).join('');
-    document.querySelector('#flywheelRows').innerHTML=gaps.map(x=>`<tr><td>${esc(x.query)}</td><td>${x.retrieval_count}</td><td>${x.no_result_count}</td><td>${x.negative_feedback_count}</td><td>${x.positive_feedback_count}</td><td class="${x.score>=3?'danger':''}">${x.score}</td><td>${new Date(x.last_seen_at).toLocaleString()}</td><td><button data-query="${esc(x.normalized_query)}" onclick="createFlywheelProposal(this.dataset.query,this)">生成待审核提案</button></td></tr>`).join('');
-    document.querySelector('#proposalRows').innerHTML=proposals.map(x=>`<tr><td>${esc(x.title)}</td><td>${esc(x.kind)}</td><td>${esc(x.status)}</td><td>${esc(x.created_by)}</td><td>${new Date(x.created_at).toLocaleString()}</td><td>${esc(x.reviewed_by||'-')}</td><td>${x.status==='pending'?`<button onclick="reviewProposal(${x.id},'approved',this)">批准</button> <button onclick="reviewProposal(${x.id},'rejected',this)">拒绝</button>`:'-'}</td></tr>`).join('');
-  }catch(error){document.querySelector('#policyStatus').innerHTML=`<span class="danger">控制台读取失败：${esc(error.message)}</span>`}
+async function api(path,options={}){options.headers={...authHeaders(),...(options.headers||{})};const r=await rawFetch(path,options);if(!r.ok){let d={};try{d=await r.json()}catch(e){}throw new Error(d.detail||('HTTP '+r.status))}return r}
+async function apiJSON(path,options={}){return (await api(path,options)).json()}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function payload(t){try{return JSON.parse(t.payload_json||'{}')}catch(e){return{}}}
+const fmt=s=>s?new Date(s).toLocaleString():'-';
+let state={proposals:[]};
+
+// ===== 新手动画教学 =====
+const tutorialSteps = [
+  { target:'#adminKey', title:'管理员密钥', desc:'生产环境在此填写 X-Admin-Key；本地开发可留空。密钥只保存在本浏览器。' },
+  { target:'#mNodes', title:'总览指标卡', desc:'在线节点、文件总数、副本健康率、待处理任务、未关闭告警，每 10 秒自动刷新。' },
+  { target:'#nav button[data-module="files"]', title:'模块导航', desc:'顶部导航切换 10 个功能模块，本教程带你逐个认识。' },
+  { module:'files', target:'#module-files h3', title:'文件管理', desc:'按分区筛选、搜索文件；可查看切片、下载原文，一键同步到 Dify 数据集（单个或全部）。' },
+  { module:'search', target:'#module-search h3', title:'知识检索', desc:'输入问题检索知识库，结果带参考链接与热度；高频命中片段自动加权提升排序。' },
+  { module:'gaps', target:'#module-gaps h3', title:'待添加清单', desc:'常问但知识库未命中的问题自动沉淀；可标记已添加或忽略。' },
+  { module:'proposals', target:'#module-proposals h3', title:'提案审核', desc:'点击标题展读提案正文，批准/拒绝并写入审计日志。' },
+  { module:'alerts', target:'#module-alerts h3', title:'告警中心', desc:'查看告警并确认/关闭，同时查看各渠道投递状态。' },
+  { module:'replicas', target:'#module-replicas h3', title:'副本管理', desc:'副本策略健康率、修复任务重试、固定副本池一览。' },
+  { module:'system', target:'#module-system h3', title:'系统与安全', desc:'DSH 文档审核、API 密钥 RBAC、备份恢复、二进制对象存储。' },
+  { module:'config', target:'#module-config h3', title:'后台配置', desc:'Dify 接入、严格接地、热度加权、汇总周期；底部可做问答联调。' },
+  { module:'reserved', target:'#module-reserved h3', title:'预留模块', desc:'数据看板、自定义模块、智能体能力等扩展入口。' },
+];
+let tutorialIndex = 0;
+function tutorialOpen(){ tutorialIndex = 0; $('#tutorialOverlay').classList.add('show'); tutorialRender(); }
+function tutorialSkip(){ $('#tutorialOverlay').classList.remove('show'); }
+function tutorialStep(d){ tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender(); }
+function tutorialRender(){
+  const st = tutorialSteps[tutorialIndex];
+  $('#tutorialStepNo').textContent = `第 ${tutorialIndex + 1} / ${tutorialSteps.length} 步`;
+  $('#tutorialTitle').textContent = st.title;
+  $('#tutorialDesc').textContent = st.desc;
+  $('#tutorialPrev').style.visibility = tutorialIndex === 0 ? 'hidden' : 'visible';
+  $('#tutorialNext').textContent = tutorialIndex === tutorialSteps.length - 1 ? '完成 ✓' : '下一步 →';
+  $('#tutorialDots').innerHTML = tutorialSteps.map((_, i) => `<i class="${i === tutorialIndex ? 'on' : ''}"></i>`).join('');
+  if (st.module && typeof switchModule === 'function') switchModule(st.module);
+  setTimeout(() => tutorialPosition(st.target), 150);
 }
-async function loadExtended(){
-  try{
-    const [org,dsh,deliveries,blobs,keys,backups,sec]=await Promise.all([api('/api/v1/orchestration/status').then(x=>x.json()),api('/api/v1/dsh/status').then(x=>x.json()),api('/api/v1/alert-deliveries').then(x=>x.json()),api('/api/v1/blob-objects').then(x=>x.json()),api('/api/v1/admin/keys').then(x=>x.json()),api('/api/v1/admin/backup/status').then(x=>x.json()),api('/api/v1/security/status').then(x=>x.json())]);
-    document.querySelector('#systemStatus').innerHTML=`编排：${esc(org.effective_mode)}（LangGraph ${org.langgraph_available?'可用':'未安装'}，管线 ${esc(org.pipeline.join('→'))}）；DSH：${dsh.enabled?'启用 '+esc(dsh.base_url||''):'禁用'}；OIDC：${sec.configured?'已配置 '+esc(sec.discovery_url||''):'未配置'}；本地JWT：${sec.local_jwt_ready?'就绪':'未设置密钥'}`;
-    const summary=deliveries.summary||{};const channels=summary.channels||[];
-    document.querySelector('#deliverySummary').textContent='启用渠道：'+(channels.length?channels.join('、'):'无');
-    document.querySelector('#deliveryRows').innerHTML=(deliveries.deliveries||[]).map(x=>`<tr><td>${x.alert_id}</td><td>${esc(x.channel)}</td><td>${esc(x.status)}</td><td>${x.attempts}</td><td class="danger">${esc(x.last_error||'-')}</td><td>${x.sent_at?new Date(x.sent_at).toLocaleString():'-'}</td></tr>`).join('');
-    document.querySelector('#blobRows').innerHTML=blobs.map(x=>`<tr><td>${x.file_id}</td><td>${esc(x.file_hash.slice(0,16))}...</td><td>${esc(x.mime_type||'-')}</td><td>${x.size_bytes}</td><td>${esc(x.storage_backend)}</td><td>${new Date(x.created_at).toLocaleString()}</td></tr>`).join('');
-    document.querySelector('#keyRows').innerHTML=keys.map(x=>`<tr><td>${esc(x.key_id)}</td><td>${esc(x.role)}</td><td>${esc(x.label||'-')}</td><td>${x.active?'有效':'已撤销'}</td><td>${x.last_used_at?new Date(x.last_used_at).toLocaleString():'-'}</td><td>${x.expires_at?new Date(x.expires_at).toLocaleString():'-'}</td><td>${x.active?`<button onclick="revokeKey('${esc(x.key_id)}',this)">撤销</button>`:'-'}</td></tr>`).join('');
-    document.querySelector('#backupStatus').textContent=`${backups.runs.length} 个备份；目录 ${backups.backup_dir}；保留 ${backups.retention_days} 天`;
-    document.querySelector('#backupRows').innerHTML=backups.runs.map(x=>`<tr><td>${esc(x.backup_id)}</td><td>${new Date(x.created_at).toLocaleString()}</td><td>${esc(x.database_backend)}</td><td>${(x.files||[]).map(f=>esc(f.name)).join('、')}</td><td>${x.pruned_runs??'-'}</td></tr>`).join('');
-  }catch(error){document.querySelector('#systemStatus').innerHTML=`<span class="danger">扩展面板读取失败：${esc(error.message)}</span>`}
+function tutorialPosition(sel){
+  const el = document.querySelector(sel), hl = $('#tutorialHighlight'), card = $('#tutorialCard');
+  if (!el){ hl.style.display = 'none'; card.style.left = '50%'; card.style.top = '40%'; card.style.transform = 'translateX(-50%)'; return; }
+  const r = el.getBoundingClientRect();
+  hl.style.display = 'block';
+  hl.style.left = (r.left - 8) + 'px'; hl.style.top = (r.top - 8) + 'px'; hl.style.width = (r.width + 16) + 'px'; hl.style.height = (r.height + 16) + 'px';
+  let cx = r.left + r.width / 2 - 170; cx = Math.max(16, Math.min(cx, window.innerWidth - 356));
+  let cy = r.bottom + 14;
+  if (cy + 200 > window.innerHeight) cy = Math.max(16, r.top - 200);
+  card.style.left = cx + 'px'; card.style.top = cy + 'px'; card.style.transform = 'none';
 }
-async function uploadBlob(button){
-  const fileId=document.querySelector('#blobFileId').value;const nodeId=document.querySelector('#blobNodeId').value.trim();const input=document.querySelector('#blobFile');
+setTimeout(tutorialOpen, 900);
+
+function switchModule(name){
+  $$('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.module===name));
+  $$('.module').forEach(m=>m.classList.toggle('active',m.id==='module-'+name));
+  ({overview:loadOverview,files:loadFiles,search:()=>{},gaps:loadGaps,proposals:loadProposals,alerts:loadAlerts,replicas:loadReplicas,system:loadSystem,config:loadConfig,reserved:()=>{}})[name]();
+}
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)switchModule(b.dataset.module)});
+
+async function loadCategories(){
+  try{
+    const d=await apiJSON('/api/v1/categories');
+    const opts=(c)=>c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+    $('#fileCategoryFilter').innerHTML='<option value="">全部分区</option>'+opts(d.categories||[]);
+    $('#searchCat').innerHTML='<option value="">全部分区</option>'+opts(d.categories||[]);
+  }catch(e){}
+}
+
+function renderAlerts(alerts,el){
+  el.innerHTML=(alerts||[]).slice(0,50).map(x=>`<tr><td class="${x.severity==='high'?'danger':''}">${esc(x.severity)}</td><td>${esc(x.kind)}</td><td>${esc(x.resource_type)}:${esc(x.resource_id)}</td><td>${esc(x.status)}</td><td>${esc(x.message)}</td><td>${x.status==='open'?`<button class="small" onclick="alertAction(${x.id},'ack')">确认</button>`:''}${x.status!=='resolved'?` <button class="small ghost" onclick="alertAction(${x.id},'resolve')">关闭</button>`:'-'}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">暂无告警</td></tr>';
+}
+
+async function loadOverview(){
+  try{
+    const [n,f,t,policy,alerts]=await Promise.all([apiJSON('/api/v1/nodes'),apiJSON('/api/v1/files/summary'),apiJSON('/api/v1/tasks'),apiJSON('/api/v1/replica-policy/health'),apiJSON('/api/v1/alerts')]);
+    $('#mNodes').textContent=n.filter(x=>x.status==='online').length;
+    $('#mFiles').textContent=f.total;
+    $('#mHealth').textContent=(policy.health_rate*100).toFixed(1)+'%';
+    $('#mHealth').className='num '+(policy.invalid_nodes.length||policy.failed_repairs?'danger':'ok');
+    $('#mTasks').textContent=t.filter(x=>['pending','running','waiting','failed'].includes(x.status)).length;
+    $('#mAlerts').textContent=alerts.filter(x=>x.status!=='resolved').length;
+    $('#nodeRows').innerHTML=n.map(x=>`<tr><td>${esc(x.hostname)}</td><td>${esc(x.status)}</td><td>${x.is_replica?'是':'否'}</td><td>${Number(x.cpu_percent).toFixed(1)}%</td><td>${fmt(x.last_seen_at)}</td></tr>`).join('');
+    renderAlerts(alerts,$('#alertRows'));
+    const [org,dsh,sec]=await Promise.all([apiJSON('/api/v1/orchestration/status').catch(()=>({})),apiJSON('/api/v1/dsh/status').catch(()=>({})),apiJSON('/api/v1/security/status').catch(()=>({}))]);
+    $('#systemStatus').innerHTML=`编排：${esc(org.effective_mode||'-')}（LangGraph ${org.langgraph_available?'可用':'未装'}，管线 ${esc((org.pipeline||[]).join('→'))}）；DSH：${dsh.enabled?'启用 '+esc(dsh.base_url||''):'禁用'}；OIDC：${sec.configured?'已配置':'未配置'}；本地JWT：${sec.local_jwt_ready?'就绪':'未设置'}`;
+  }catch(e){$('#systemStatus').innerHTML=`<span class="danger">读取失败：${esc(e.message)}</span>`}
+}
+
+async function loadFiles(){
+  try{
+    const cat=$('#fileCategoryFilter').value;
+    const q=($('#fileSearch').value||'').toLowerCase();
+    const files=await apiJSON('/api/v1/pipeline/files');
+    const list=files.filter(f=>(!cat||f.category===cat)&&(!q||(f.path||'').toLowerCase().includes(q)));
+    $('#fileRows').innerHTML=list.map(x=>`<tr><td><span class="badge">${esc(x.category||'-')}</span></td><td>${esc(x.path)}</td><td>${esc(x.source_node_id)}</td><td>${esc(x.status)}${x.alive?'':' <span class="danger">缺失</span>'}</td><td>${x.size_bytes}</td><td>${x.chunk_count}</td><td>${esc(x.embedding_provider||'-')}/${esc(x.embedding_status||'-')}</td><td>${x.replica_count}</td><td>${fmt(x.updated_at)}</td><td><button class="small ghost" onclick="showChunks(${x.id})">切片</button> <a class="badge" href="/api/v1/gateway/files/${x.id}" target="_blank">下载</a> <button class="small" onclick="ingestToDify(${x.id},this)">Dify</button></td></tr>`).join('')||'<tr><td colspan="10" class="muted">暂无文件</td></tr>';
+    $('#fileDetail').innerHTML='';
+  }catch(e){$('#fileDetail').innerHTML=`<span class="danger">${esc(e.message)}</span>`}
+}
+async function ingestToDify(id,btn){if(btn)btn.disabled=true;try{const d=await apiJSON(`/api/v1/rag/ingest?file_id=${id}`,{method:'POST'});$('#difyStatus').innerHTML=`文件 #${id}：${d.queued?'已排队（解析后自动接入）':'已接入 Dify ✓'}`}catch(e){$('#difyStatus').innerHTML=`同步失败：${esc(e.message)}`}finally{if(btn)btn.disabled=false}}
+async function ingestAllToDify(btn){btn.disabled=true;try{const files=await apiJSON('/api/v1/pipeline/files');let immediate=0;for(const f of files){try{const d=await apiJSON(`/api/v1/rag/ingest?file_id=${f.id}`,{method:'POST'});if(!d.queued)immediate+=1}catch(e){}}$('#difyStatus').textContent=`已请求同步 ${files.length} 个文件（${immediate} 个立即接入，其余排队待解析）`}catch(e){$('#difyStatus').textContent='批量同步失败：'+e.message}finally{btn.disabled=false}}
+async function showChunks(id){
+  try{
+    const chunks=await apiJSON(`/api/v1/files/${id}/chunks`);
+    $('#fileDetail').innerHTML='<div class="card" style="margin-top:10px;box-shadow:none;border-color:var(--line)"><b>文件 #'+id+' 切片</b><div class="table-wrap"><table><thead><tr><th>序号</th><th>哈希</th><th>内容</th></tr></thead><tbody>'+chunks.map(c=>`<tr><td>${c.chunk_index}</td><td><code>${esc((c.content_hash||'').slice(0,16))}…</code></td><td style="white-space:normal">${esc(c.content)}</td></tr>`).join('')+'</tbody></table></div></div>';
+  }catch(e){$('#fileDetail').innerHTML=`<span class="danger">${esc(e.message)}</span>`}
+}
+
+async function runSearch(btn){
+  const q=$('#searchQuery').value.trim();if(!q)return;
+  btn.disabled=true;
+  try{
+    const cat=$('#searchCat').value||null;
+    const data=await apiJSON('/api/v1/knowledge/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,top_k:Number($('#searchTopK').value)||5,idempotency_key:`console-${Date.now()}`,category:cat})});
+    $('#searchStatus').textContent=`${data.count} 条结果；查询向量：${data.embedding_provider}/${data.embedding_status}${data.count?'':'；已作为无结果事件进入飞轮'}`;
+    $('#searchRows').innerHTML=data.results.map(x=>`<tr><td><span class="badge">${esc(x.category||'-')}</span></td><td>${esc(x.path)}</td><td>${x.chunk_index}</td><td>${Number(x.score).toFixed(4)}</td><td>${x.hit_count||0}</td><td><a class="badge" href="/api/v1/gateway/files/${x.file_id}" target="_blank">参考</a></td><td style="white-space:normal;min-width:320px">${esc(x.content)}</td></tr>`).join('');
+  }catch(e){$('#searchStatus').innerHTML=`<span class="danger">检索失败：${esc(e.message)}</span>`}
+  finally{btn.disabled=false}
+}
+
+async function loadGaps(){
+  try{
+    const gaps=await apiJSON('/api/v1/gaps');
+    $('#gapRows').innerHTML=gaps.map(g=>`<tr><td>${esc(g.normalized_query)}</td><td>${g.ask_count}</td><td>${g.no_hit_count}</td><td><span class="badge">${esc(g.status)}</span></td><td>${fmt(g.last_seen_at)}</td><td>${g.status==='open'?`<button class="small" onclick="gapAction(${g.id},'added',this)">标记已添加</button> <button class="small ghost" onclick="gapAction(${g.id},'ignored',this)">忽略</button>`:esc(g.note||'-')}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">暂无待添加问题</td></tr>';
+  }catch(e){}
+}
+async function gapAction(id,status,btn){btn.disabled=true;try{await apiJSON(`/api/v1/gaps/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});await loadGaps()}catch(e){alert(`操作失败：${e.message}`)}finally{btn.disabled=false}}
+async function runGapSummarize(btn){btn.disabled=true;try{const d=await apiJSON('/api/v1/gaps/summarize',{method:'POST'});$('#gapMeta').textContent=`汇总完成：新增/更新 ${d.updated} 项`;await loadGaps()}catch(e){$('#gapMeta').textContent='汇总失败：'+e.message}finally{btn.disabled=false}}
+
+async function loadConfig(){
+  try{
+    const d=await apiJSON('/api/v1/admin/config');
+    const eff=d.effective||{};
+    $('#cfgDifyBase').value=eff.dify_base_url||'';
+    $('#cfgDifyKey').value=eff.dify_api_key||'';
+    $('#cfgDataset').value=eff.dify_dataset_id||'';
+    $('#cfgStrict').checked=!!eff.rag_strict;
+    $('#cfgMinScore').value=eff.rag_min_score??0;
+    $('#cfgBoost').checked=!!eff.boost_enabled;
+    $('#cfgBoostWeight').value=eff.boost_weight??1;
+    $('#cfgGapHours').value=eff.gap_summary_interval_hours??24;
+    $('#cfgStatus').textContent='配置已加载（密钥为掩码显示，留空不修改）';
+  }catch(e){$('#cfgStatus').textContent='加载失败：'+e.message}
+}
+async function saveConfig(btn){btn.disabled=true;try{
+  const items=[['dify_base_url',$('#cfgDifyBase').value.trim()],['dify_api_key',$('#cfgDifyKey').value.trim()],['dify_dataset_id',$('#cfgDataset').value.trim()],['rag_strict',$('#cfgStrict').checked?'true':'false'],['rag_min_score',$('#cfgMinScore').value],['boost_enabled',$('#cfgBoost').checked?'true':'false'],['boost_weight',$('#cfgBoostWeight').value],['gap_summary_interval_hours',$('#cfgGapHours').value]];
+  for(const [k,v] of items){await apiJSON('/api/v1/admin/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,value:v})})}
+  $('#cfgStatus').textContent='已保存';
+  loadConfig();
+}catch(e){$('#cfgStatus').textContent='保存失败：'+e.message}finally{btn.disabled=false}}
+async function testDify(btn){btn.disabled=true;try{const d=await apiJSON('/api/v1/dify/status');$('#cfgStatus').textContent=d.message||JSON.stringify(d)}catch(e){$('#cfgStatus').textContent='测试失败：'+e.message}finally{btn.disabled=false}}
+async function quickChat(btn){const q=$('#cfgChatQuery').value.trim();if(!q)return;btn.disabled=true;try{const d=await apiJSON('/api/v1/rag/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,top_k:5})});$('#cfgChatResult').innerHTML=`<b>${d.blocked?'【未命中参考，已拒绝回答】':'回答：'}</b>${esc(d.answer||'')}`+((d.references||[]).map(r=>`<br>· <a href="${esc(r.link||'#')}" target="_blank">${esc(r.document_name||('文件#'+r.file_id))}</a>（相似度 ${r.score}）`).join('')||'<br><span class="muted">（无参考链接）</span>')}catch(e){$('#cfgChatResult').textContent='提问失败：'+e.message}finally{btn.disabled=false}}
+
+async function loadProposals(){
+  try{
+    state.proposals=await apiJSON('/api/v1/proposals');
+    $('#proposalRows').innerHTML=state.proposals.map((p,i)=>`<tr><td><a href="javascript:void(0)" onclick="toggleProposal(${i})" style="color:var(--primary);text-decoration:none;font-weight:500">${esc(p.title)}</a></td><td>${esc(p.kind)}</td><td><span class="badge">${esc(p.status)}</span></td><td>${esc(p.created_by)}</td><td>${fmt(p.created_at)}</td><td>${esc(p.reviewed_by||'-')}</td><td>${p.status==='pending'?`<button class="small" onclick="reviewProposal(${p.id},'approved',this)">批准</button> <button class="small danger" onclick="reviewProposal(${p.id},'rejected',this)">拒绝</button>`:'-'}</td></tr><tr id="proposal-detail-${i}" style="display:none"><td colspan="7"><div class="proposal-body">${esc(p.body||'(无正文)')}</div></td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无提案</td></tr>';
+  }catch(e){}
+}
+function toggleProposal(i){const el=$('#proposal-detail-'+i);if(el)el.style.display=el.style.display==='none'?'':'none'}
+async function reviewProposal(id,decision,btn){btn.disabled=true;try{const r=await api(`/api/v1/proposals/${id}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,reviewer:'console-admin'})});if(!r.ok)throw new Error((await r.json()).detail);await loadProposals();await loadGaps()}catch(e){alert(`审核失败：${e.message}`)}finally{btn.disabled=false}}
+
+async function loadAlerts(){
+  try{
+    const alerts=await apiJSON('/api/v1/alerts');
+    renderAlerts(alerts,$('#alertRows2'));
+    const d=await apiJSON('/api/v1/alert-deliveries');
+    const summary=d.summary||{};const channels=summary.channels||[];
+    $('#deliverySummary').textContent='启用渠道：'+(channels.length?channels.join('、'):'无');
+    $('#deliveryRows').innerHTML=(d.deliveries||[]).map(x=>`<tr><td>${x.alert_id}</td><td>${esc(x.channel)}</td><td>${esc(x.status)}</td><td>${x.attempts}</td><td class="danger">${esc(x.last_error||'-')}</td><td>${x.sent_at?fmt(x.sent_at):'-'}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">暂无投递</td></tr>';
+  }catch(e){}
+}
+async function alertAction(id,action){try{const r=await api(`/api/v1/alerts/${id}/${action}`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail);await loadAlerts();await loadOverview()}catch(e){alert(`操作失败：${e.message}`)}}
+
+async function loadReplicas(){
+  try{
+    const [r,policy,repairs]=await Promise.all([apiJSON('/api/v1/replicas'),apiJSON('/api/v1/replica-policy/health'),apiJSON('/api/v1/replica-repairs')]);
+    const invalid=policy.invalid_nodes.length?`；无效节点：${policy.invalid_nodes.map(esc).join('、')}`:'';
+    $('#policyStatus').innerHTML=`已启用 ${policy.valid_nodes.length} 个固定副本节点，健康 ${policy.healthy_replicas}/${policy.expected_replicas}，待处理 ${policy.pending_repairs}，失败 ${policy.failed_repairs}<span class="danger">${invalid}</span>`;
+    $('#repairRows').innerHTML=repairs.map(x=>{const d=payload(x);return`<tr><td>#${x.id}</td><td>文件 ${esc(d.file_id||'-')}/${esc(d.target_node_id||'-')}</td><td>${esc(x.status)}</td><td class="danger">${esc(x.error||'-')}</td><td>${x.status==='failed'?`<button class="small" onclick="retryRepair(${x.id},this)">重试</button>`:'-'}</td></tr>`}).join('');
+    $('#replicaRows').innerHTML=r.map(x=>`<tr><td>${x.file_id}</td><td>${esc(x.node_id)}</td><td>${esc(x.status)}</td><td><code>${esc((x.file_hash||'').slice(0,12))}…</code></td><td>${fmt(x.last_seen_at)}</td></tr>`).join('');
+  }catch(e){$('#policyStatus').innerHTML=`<span class="danger">读取失败：${esc(e.message)}</span>`}
+}
+async function retryRepair(id,btn){btn.disabled=true;try{const r=await api(`/api/v1/replica-repairs/${id}/retry`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail);await loadReplicas()}catch(e){alert(`重试失败：${e.message}`)}finally{btn.disabled=false}}
+
+async function loadSystem(){
+  try{
+    const [keys,backups,blobs]=await Promise.all([apiJSON('/api/v1/admin/keys'),apiJSON('/api/v1/admin/backup/status'),apiJSON('/api/v1/blob-objects')]);
+    $('#keyRows').innerHTML=keys.map(x=>`<tr><td><code>${esc(x.key_id)}</code></td><td><span class="badge">${esc(x.role)}</span></td><td>${esc(x.label||'-')}</td><td>${x.active?'<span class="ok">有效</span>':'<span class="muted">已撤销</span>'}</td><td>${x.last_used_at?fmt(x.last_used_at):'-'}</td><td>${x.expires_at?fmt(x.expires_at):'-'}</td><td>${x.active?`<button class="small danger" onclick="revokeKey('${esc(x.key_id)}',this)">撤销</button>`:'-'}</td></tr>`).join('');
+    $('#backupStatus').textContent=`${backups.runs.length} 个备份；目录 ${backups.backup_dir}；保留 ${backups.retention_days} 天`;
+    $('#backupRows').innerHTML=backups.runs.map(x=>`<tr><td>${esc(x.backup_id)}</td><td>${fmt(x.created_at)}</td><td>${esc(x.database_backend)}</td><td>${(x.files||[]).map(f=>esc(f.name)).join('、')}</td><td>${x.pruned_runs??'-'}</td></tr>`).join('');
+    $('#blobRows').innerHTML=blobs.map(x=>`<tr><td>${x.file_id}</td><td><code>${esc((x.file_hash||'').slice(0,16))}…</code></td><td>${esc(x.mime_type||'-')}</td><td>${x.size_bytes}</td><td>${esc(x.storage_backend)}</td><td>${fmt(x.created_at)}</td></tr>`).join('');
+  }catch(e){}
+}
+async function createKey(btn){btn.disabled=true;try{const r=await api('/api/v1/admin/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:$('#keyRole').value,label:$('#keyLabel').value})});const data=await r.json();$('#keyResult').innerHTML=`<span class="ok">已创建 ${esc(data.key_id)}，明文（仅此一次）：</span><code>${esc(data.api_key)}</code>`;await loadSystem()}catch(e){$('#keyResult').innerHTML=`<span class="danger">创建失败：${esc(e.message)}</span>`}finally{btn.disabled=false}}
+async function revokeKey(id,btn){btn.disabled=true;try{const r=await api(`/api/v1/admin/keys/${encodeURIComponent(id)}/revoke`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail);await loadSystem()}catch(e){alert(`撤销失败：${e.message}`)}finally{btn.disabled=false}}
+async function runBackup(btn){btn.disabled=true;try{const data=await apiJSON('/api/v1/admin/backup',{method:'POST'});$('#backupStatus').innerHTML=`<span class="ok">备份完成：${esc(data.backup_id)}</span>`;await loadSystem()}catch(e){$('#backupStatus').innerHTML=`<span class="danger">备份失败：${esc(e.message)}</span>`}finally{btn.disabled=false}}
+async function uploadBlob(btn){
+  const fileId=$('#blobFileId').value,nodeId=$('#blobNodeId').value.trim(),input=$('#blobFile');
   if(!fileId||!nodeId||!input.files.length)return;
-  button.disabled=true;
+  btn.disabled=true;
   try{
     const buf=await input.files[0].arrayBuffer();
     const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',buf))).map(b=>b.toString(16).padStart(2,'0')).join('');
-    const response=await api(`/api/v1/files/${fileId}/blob`,{method:'POST',headers:{'X-File-Hash':hash,'X-Node-Id':nodeId,'Content-Type':input.files[0].type||'application/octet-stream'},body:buf});
-    if(!response.ok)throw new Error((await response.json()).detail||response.statusText);
-    const data=await response.json();
-    document.querySelector('#blobStatus').innerHTML=`<span class="ok">上传成功：${esc(data.sha256)}（${data.size_bytes} 字节，${esc(data.storage_backend)}）</span>`;
-    await loadExtended();
-  }catch(error){document.querySelector('#blobStatus').innerHTML=`<span class="danger">上传失败：${esc(error.message)}</span>`}
-  finally{button.disabled=false}
+    const r=await api(`/api/v1/files/${fileId}/blob`,{method:'POST',headers:{'X-File-Hash':hash,'X-Node-Id':nodeId,'Content-Type':input.files[0].type||'application/octet-stream'},body:buf});
+    const data=await r.json();
+    $('#blobStatus').innerHTML=`<span class="ok">上传成功：${esc(data.sha256)}（${data.size_bytes} 字节，${esc(data.storage_backend)}）</span>`;
+    await loadSystem();
+  }catch(e){$('#blobStatus').innerHTML=`<span class="danger">上传失败：${esc(e.message)}</span>`}
+  finally{btn.disabled=false}
 }
-async function createKey(button){
-  button.disabled=true;
-  try{
-    const response=await api('/api/v1/admin/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:document.querySelector('#keyRole').value,label:document.querySelector('#keyLabel').value})});
-    if(!response.ok)throw new Error((await response.json()).detail||response.statusText);
-    const data=await response.json();
-    document.querySelector('#keyResult').innerHTML=`<span class="ok">已创建 ${esc(data.key_id)}，明文（仅此一次）：</span><code>${esc(data.api_key)}</code>`;
-    await loadExtended();
-  }catch(error){document.querySelector('#keyResult').innerHTML=`<span class="danger">创建失败：${esc(error.message)}</span>`}
-  finally{button.disabled=false}
-}
-async function revokeKey(keyId,button){button.disabled=true;try{const r=await api(`/api/v1/admin/keys/${encodeURIComponent(keyId)}/revoke`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail||r.statusText);await loadExtended()}catch(error){alert(`撤销失败：${error.message}`)}finally{button.disabled=false}}
-async function runBackup(button){button.disabled=true;try{const r=await api('/api/v1/admin/backup',{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail||r.statusText);const data=await r.json();document.querySelector('#backupStatus').innerHTML=`<span class="ok">备份完成：${esc(data.backup_id)}</span>`;await loadExtended()}catch(error){document.querySelector('#backupStatus').innerHTML=`<span class="danger">备份失败：${esc(error.message)}</span>`}finally{button.disabled=false}}
-async function runDshReview(button){const fileId=document.querySelector('#dshFileId').value;if(!fileId)return;button.disabled=true;try{const r=await api(`/api/v1/dsh/review?file_id=${fileId}`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail||r.statusText);const data=await r.json();document.querySelector('#dshStatus').innerHTML=`<span class="ok">已生成待审核提案 #${data.proposal_id}（${esc(data.kind)}）</span>`;await load()}catch(error){document.querySelector('#dshStatus').innerHTML=`<span class="danger">DSH 审核触发失败：${esc(error.message)}</span>`}finally{button.disabled=false}}
-document.querySelector('#adminKey').value=localStorage.getItem('adminKey')||'';
-load();setInterval(load,10000);loadExtended();setInterval(loadExtended,10000)
-</script></main></body></html>
+async function runDshReview(btn){const fileId=$('#dshFileId').value;if(!fileId)return;btn.disabled=true;try{const data=await apiJSON(`/api/v1/dsh/review?file_id=${fileId}`,{method:'POST'});$('#dshStatus').innerHTML=`<span class="ok">已生成待审核提案 #${data.proposal_id}（${esc(data.kind)}）</span>`;await loadProposals()}catch(e){$('#dshStatus').innerHTML=`<span class="danger">DSH 审核触发失败：${esc(e.message)}</span>`}finally{btn.disabled=false}}
+
+$('#adminKey').value=localStorage.getItem('adminKey')||'';
+$('#fileSearch').addEventListener('input',loadFiles);
+$('#fileCategoryFilter').addEventListener('change',loadFiles);
+(async function init(){
+  await loadCategories();
+  await Promise.all([loadOverview(),loadFiles(),loadGaps(),loadProposals(),loadAlerts(),loadReplicas(),loadSystem(),loadConfig()]);
+})();
+setInterval(()=>{loadOverview();loadFiles();loadAlerts();loadProposals();},10000);
+</script>
+</body>
+</html>

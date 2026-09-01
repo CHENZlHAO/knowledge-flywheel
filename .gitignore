@@ -20,6 +20,10 @@ backups/
 *.exe
 dist/
 
+# PyInstaller build artifacts
+build/
+*.spec
+
 # Editor/tool probe files
 .codex_write_probe
 
