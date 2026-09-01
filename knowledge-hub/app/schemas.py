@@ -98,6 +98,10 @@ class ConfigUpdate(BaseModel):
     value: str = Field(default="", max_length=4096)
 
 
+class FileUpdate(BaseModel):
+    category: str = Field(min_length=1, max_length=128)
+
+
 class ApiKeyCreate(BaseModel):
     role: str = Field(pattern="^(admin|node|mobile|search|flywheel|download|mqtt_bridge)$")
     label: str = Field(default="", max_length=255)

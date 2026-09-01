@@ -64,6 +64,8 @@ func (w *webServer) start() {
 	mux.HandleFunc("/api/search", w.handleSearch)
 	mux.HandleFunc("/api/ingest", w.handleIngest)
 	mux.HandleFunc("/api/queue", w.handleQueue)
+	mux.HandleFunc("/api/files", w.handleFiles)
+	mux.HandleFunc("/api/files/", w.handleFileMutation)
 	mux.HandleFunc("/api/proposals", w.handleProposals)
 	mux.HandleFunc("/api/proposals/", w.handleProposalReview)
 	mux.Handle("/", w.staticHandler())
@@ -549,6 +551,71 @@ func (w *webServer) handleIngest(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Printf("[audit] dify-ingest node=%s file_id=%d\n", w.cfg.NodeID, req.FileID)
+	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+	rw.WriteHeader(status)
+	_, _ = rw.Write(body)
+}
+
+// handleFiles 列出中心端文卷（节点鉴权），供边缘端独立工作台管理。
+func (w *webServer) handleFiles(rw http.ResponseWriter, r *http.Request) {
+	if !w.authorized(r) {
+		writeJSON(rw, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSON(rw, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	status, body, err := roundTrip(r.Context(), w.client, http.MethodGet, endpoint(w.cfg, "/api/v1/pipeline/files?include_dead=true"), nil, "X-Node-Key", w.cfg.NodeAPIKey)
+	if err != nil {
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "message": "中心离线：文卷列表不可用"})
+		return
+	}
+	if status >= 300 {
+		writeJSON(rw, status, map[string]any{"error": "center returned " + http.StatusText(status) + ": " + trimBody(body)})
+		return
+	}
+	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
+	rw.WriteHeader(status)
+	_, _ = rw.Write(body)
+}
+
+// handleFileMutation 代理 PATCH（改部类）与 DELETE（删除）到中心端。
+func (w *webServer) handleFileMutation(rw http.ResponseWriter, r *http.Request) {
+	if !w.authorized(r) {
+		writeJSON(rw, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		return
+	}
+	idStr := strings.TrimPrefix(r.URL.Path, "/api/files/")
+	if idStr == "" || (r.Method != http.MethodPatch && r.Method != http.MethodDelete) {
+		writeJSON(rw, http.StatusBadRequest, map[string]any{"error": "file id and PATCH/DELETE required"})
+		return
+	}
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeJSON(rw, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	url := endpoint(w.cfg, fmt.Sprintf("/api/v1/files/%s", idStr))
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if k := w.cfg.NodeAPIKey; k != "" {
+		req.Header.Set("X-Node-Key", k)
+	}
+	status, body, err := doRoundTrip(w.client, req)
+	if err != nil {
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "message": "中心离线：无法修改/删除文卷"})
+		return
+	}
+	if status >= 300 {
+		writeJSON(rw, status, map[string]any{"error": "center returned " + http.StatusText(status) + ": " + trimBody(body)})
+		return
+	}
+	fmt.Printf("[audit] file-%s node=%s file_id=%s\n", strings.ToLower(r.Method), w.cfg.NodeID, idStr)
 	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 	rw.WriteHeader(status)
 	_, _ = rw.Write(body)

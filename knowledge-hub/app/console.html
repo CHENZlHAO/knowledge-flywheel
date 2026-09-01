@@ -463,7 +463,7 @@ code {
 /* ===== 新手动画教学 ===== */
 #tutorialOverlay{position:fixed;inset:0;z-index:1000;display:none}
 #tutorialOverlay.show{display:block}
-#tutorialBackdrop{position:absolute;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);cursor:pointer}
+#tutorialBackdrop{position:absolute;inset:0;background:rgba(15,23,42,.16);cursor:pointer}
 #tutorialHighlight{position:absolute;border:2px solid #2563eb;border-radius:10px;pointer-events:none;transition:all .3s ease;animation:tutPulse 1.6s infinite}
 @keyframes tutPulse{0%,100%{box-shadow:0 0 0 4px rgba(37,99,235,.25),0 0 24px rgba(37,99,235,.45)}50%{box-shadow:0 0 0 8px rgba(37,99,235,.12),0 0 32px rgba(37,99,235,.6)}}
 #tutorialCard{position:absolute;z-index:1001;width:340px;max-width:calc(100vw - 32px);background:#fff;border:1px solid #dbe3f5;border-radius:14px;box-shadow:0 20px 50px rgba(15,23,42,.35);overflow:hidden;animation:tutCardIn .3s ease}
@@ -792,23 +792,26 @@ let state={proposals:[]};
 
 // ===== 新手动画教学 =====
 const tutorialSteps = [
-  { target:'#adminKey', title:'管理员密钥', desc:'生产环境在此填写 X-Admin-Key；本地开发可留空。密钥只保存在本浏览器。' },
-  { target:'#mNodes', title:'总览指标卡', desc:'在线节点、文件总数、副本健康率、待处理任务、未关闭告警，每 10 秒自动刷新。' },
-  { target:'#nav button[data-module="files"]', title:'模块导航', desc:'顶部导航切换 10 个功能模块，本教程带你逐个认识。' },
-  { module:'files', target:'#module-files h3', title:'文件管理', desc:'按分区筛选、搜索文件；可查看切片、下载原文，一键同步到 Dify 数据集（单个或全部）。' },
-  { module:'search', target:'#module-search h3', title:'知识检索', desc:'输入问题检索知识库，结果带参考链接与热度；高频命中片段自动加权提升排序。' },
-  { module:'gaps', target:'#module-gaps h3', title:'待添加清单', desc:'常问但知识库未命中的问题自动沉淀；可标记已添加或忽略。' },
-  { module:'proposals', target:'#module-proposals h3', title:'提案审核', desc:'点击标题展读提案正文，批准/拒绝并写入审计日志。' },
-  { module:'alerts', target:'#module-alerts h3', title:'告警中心', desc:'查看告警并确认/关闭，同时查看各渠道投递状态。' },
-  { module:'replicas', target:'#module-replicas h3', title:'副本管理', desc:'副本策略健康率、修复任务重试、固定副本池一览。' },
-  { module:'system', target:'#module-system h3', title:'系统与安全', desc:'DSH 文档审核、API 密钥 RBAC、备份恢复、二进制对象存储。' },
-  { module:'config', target:'#module-config h3', title:'后台配置', desc:'Dify 接入、严格接地、热度加权、汇总周期；底部可做问答联调。' },
-  { module:'reserved', target:'#module-reserved h3', title:'预留模块', desc:'数据看板、自定义模块、智能体能力等扩展入口。' },
+  { target:'#adminKey', title:'管理员密钥是什么', desc:'这是「中心管理员」的密码。开发测试阶段留空就行，正式部署才需要填。填了它，下面这些操作才有权限。' },
+  { target:'#mNodes', title:'五个数字是总览', desc:'一眼看全局：几个节点在线、存了几个文件、副本健不健康、还有几个任务在跑、几个告警没处理。每 10 秒自动刷新。' },
+  { target:'#nav button[data-module="files"]', title:'上面一排按钮就是全部功能', desc:'点哪个按钮就进哪个页面，一共 10 个。下面我带你一个个看。' },
+  { module:'files', target:'#module-files h3', title:'文件管理', desc:'在这里管文件：按分类筛、搜文件名，看每个文件切成几片、能不能下载，还能一键把它送进 Dify（AI 问答的资料库）。' },
+  { module:'search', target:'#module-search h3', title:'知识检索', desc:'输入问题点「检索」。出来的结果带「参考」链接，点开就是原文；被查得越多的片段会排得越靠前。' },
+  { module:'gaps', target:'#module-gaps h3', title:'待补清单', desc:'大家常问、但知识库里没答案的问题，会自动记在这里，提醒你该补资料了。补完点「标记已添加」。' },
+  { module:'proposals', target:'#module-proposals h3', title:'提案审批', desc:'点标题看全文，觉得对就点「批准」，不对点「拒绝」。' },
+  { module:'alerts', target:'#module-alerts h3', title:'告警', desc:'系统发现问题（比如文件丢了）会亮在这里。点「确认」表示知道了，点「关闭」表示处理完了。' },
+  { module:'replicas', target:'#module-replicas h3', title:'副本', desc:'看哪些文件在别的电脑上存了备份、备份健不健康，坏了能点「重试」修复。' },
+  { module:'system', target:'#module-system h3', title:'系统与安全', desc:'这里是安全和管理：创建/吊销密钥、备份数据、上传二进制大文件、触发文档合规检查。' },
+  { module:'config', target:'#module-config h3', title:'后台配置（总开关）', desc:'填 Dify 地址和密钥、打开/关闭「不回答知识库外的问题」、调热度加权和汇总周期。' },
+  { module:'reserved', target:'#module-reserved h3', title:'预留位置', desc:'以后放数据看板、自定义模块、智能体能力。现在先占个位。' },
 ];
 let tutorialIndex = 0;
 function tutorialOpen(){ tutorialIndex = 0; $('#tutorialOverlay').classList.add('show'); tutorialRender(); }
 function tutorialSkip(){ $('#tutorialOverlay').classList.remove('show'); }
-function tutorialStep(d){ tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender(); }
+function tutorialStep(d){
+  if (d > 0 && tutorialIndex >= tutorialSteps.length - 1) { tutorialSkip(); return; }
+  tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender();
+}
 function tutorialRender(){
   const st = tutorialSteps[tutorialIndex];
   $('#tutorialStepNo').textContent = `第 ${tutorialIndex + 1} / ${tutorialSteps.length} 步`;
@@ -933,10 +936,15 @@ async function saveConfig(btn){btn.disabled=true;try{
 async function testDify(btn){btn.disabled=true;try{const d=await apiJSON('/api/v1/dify/status');$('#cfgStatus').textContent=d.message||JSON.stringify(d)}catch(e){$('#cfgStatus').textContent='测试失败：'+e.message}finally{btn.disabled=false}}
 async function quickChat(btn){const q=$('#cfgChatQuery').value.trim();if(!q)return;btn.disabled=true;try{const d=await apiJSON('/api/v1/rag/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,top_k:5})});$('#cfgChatResult').innerHTML=`<b>${d.blocked?'【未命中参考，已拒绝回答】':'回答：'}</b>${esc(d.answer||'')}`+((d.references||[]).map(r=>`<br>· <a href="${esc(r.link||'#')}" target="_blank">${esc(r.document_name||('文件#'+r.file_id))}</a>（相似度 ${r.score}）`).join('')||'<br><span class="muted">（无参考链接）</span>')}catch(e){$('#cfgChatResult').textContent='提问失败：'+e.message}finally{btn.disabled=false}}
 
+function prettyBody(v){
+  v = String(v == null ? '' : v);
+  try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
+  return v.replace(/\\n/g, '\n');
+}
 async function loadProposals(){
   try{
     state.proposals=await apiJSON('/api/v1/proposals');
-    $('#proposalRows').innerHTML=state.proposals.map((p,i)=>`<tr><td><a href="javascript:void(0)" onclick="toggleProposal(${i})" style="color:var(--primary);text-decoration:none;font-weight:500">${esc(p.title)}</a></td><td>${esc(p.kind)}</td><td><span class="badge">${esc(p.status)}</span></td><td>${esc(p.created_by)}</td><td>${fmt(p.created_at)}</td><td>${esc(p.reviewed_by||'-')}</td><td>${p.status==='pending'?`<button class="small" onclick="reviewProposal(${p.id},'approved',this)">批准</button> <button class="small danger" onclick="reviewProposal(${p.id},'rejected',this)">拒绝</button>`:'-'}</td></tr><tr id="proposal-detail-${i}" style="display:none"><td colspan="7"><div class="proposal-body">${esc(p.body||'(无正文)')}</div></td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无提案</td></tr>';
+    $('#proposalRows').innerHTML=state.proposals.map((p,i)=>`<tr><td><a href="javascript:void(0)" onclick="toggleProposal(${i})" style="color:var(--primary);text-decoration:none;font-weight:500">${esc(p.title)}</a></td><td>${esc(p.kind)}</td><td><span class="badge">${esc(p.status)}</span></td><td>${esc(p.created_by)}</td><td>${fmt(p.created_at)}</td><td>${esc(p.reviewed_by||'-')}</td><td>${p.status==='pending'?`<button class="small" onclick="reviewProposal(${p.id},'approved',this)">批准</button> <button class="small danger" onclick="reviewProposal(${p.id},'rejected',this)">拒绝</button>`:'-'}</td></tr><tr id="proposal-detail-${i}" style="display:none"><td colspan="7"><div class="proposal-body">${esc(prettyBody(p.body||'(无正文)'))}</div></td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无提案</td></tr>';
   }catch(e){}
 }
 function toggleProposal(i){const el=$('#proposal-detail-'+i);if(el)el.style.display=el.style.display==='none'?'':'none'}

@@ -175,6 +175,25 @@
         <button onclick="doIngestById()" class="px-3.5 py-1.5 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-sandalwood text-xs border border-[#cfc3af] font-serif">◈ 同步 Dify</button>
       </div>
     </div>
+
+    <div class="classical-card rounded-lg p-5 space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-[#e5dcce]">
+        <div>
+          <h3 class="ink-heading font-bold text-sandalwood text-base flex items-center gap-2"><span class="w-2 h-4 bg-ochre rounded-sm"></span>中心文卷管理（改部类 / 删除）</h3>
+          <p class="text-xs text-paper-600 mt-1 font-serif">管理中心端已归档的全部文卷；删除会清掉切片与对象存储，文件列表不再显示</p>
+        </div>
+        <button onclick="loadFileList()" class="px-3 py-1.5 rounded bg-[#eee7d8] hover:bg-[#e4dcce] text-sandalwood text-xs border border-[#cfc3af] font-serif">◈ 刷新文卷</button>
+      </div>
+      <div id="fileListStatus" class="text-xs text-paper-600 font-serif"></div>
+      <div class="overflow-x-auto custom-scrollbar max-h-96">
+        <table class="w-full text-left text-xs border-collapse font-serif">
+          <thead><tr class="border-b border-[#ded3be] text-paper-700 bg-[#f3ede1]/70 font-bold">
+            <th class="py-2 px-2">卷号</th><th class="py-2 px-2">路径</th><th class="py-2 px-2">部类</th><th class="py-2 px-2">状态</th><th class="py-2 px-2 text-right">操持</th>
+          </tr></thead>
+          <tbody id="fileListRows" class="divide-y divide-[#ece3d4] text-sandalwood"></tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ===== 检索 ===== -->
@@ -253,7 +272,7 @@
 
 <!-- 新手动画教学（每次打开显示，可跳过） -->
 <div id="tutorialOverlay" class="hidden fixed inset-0 z-[100]">
-  <div id="tutorialBackdrop" class="absolute inset-0 bg-[#251e18]/70 backdrop-blur-sm" onclick="tutorialSkip()"></div>
+  <div id="tutorialBackdrop" class="absolute inset-0 bg-[#251e18]/15" onclick="tutorialSkip()"></div>
   <div id="tutorialHighlight" class="absolute border-2 border-[#d4a017] rounded-lg pointer-events-none" style="transition:all .35s ease"></div>
   <div id="tutorialCard" class="absolute z-10 w-[340px] max-w-[calc(100vw-32px)]">
     <div class="bg-[#faf7f0] border-2 border-[#b8860b] rounded-lg shadow-2xl overflow-hidden">
@@ -307,17 +326,20 @@ const fmt = s => s ? new Date(s).toLocaleString() : '-';
 
 // ===== 新手动画教学（每次打开显示，可跳过） =====
 const tutorialSteps = [
-  { target: '#adminKey', title: '通关信印 (X-Admin-Key)', desc: '卷宗批红审阅需要填写中心管理员信印；上传与检索无需填写。' },
-  { target: '#nav button[data-module="files"]', title: '模块导航', desc: '边缘端五个模块：集群总览 / 文卷呈报上传 / 经籍求索研判 / 卷宗批红审阅 / 飞轮扩展象限。' },
-  { module: 'files', target: '#module-files h3', title: '文卷呈报上传', desc: '选部类 → 选文件 → 勾选「上传后同步 Dify」→ 呈报上传；文本自动解析切片，二进制进入对象存储。' },
-  { module: 'search', target: '#module-search h3', title: '经籍求索研判', desc: '输入问题检索知识库，结果带参考出处与飞轮热度；经典问案可一键填入。' },
-  { module: 'proposals', target: '#module-proposals h3', title: '卷宗批红审阅', desc: '点击标题展读奏本全文，凭通关信印准奏批红或驳回。' },
-  { module: 'reserved', target: '#module-reserved h4', title: '飞轮扩展象限', desc: '预留扩展接口：现场规约接驳 / 多智能体协理 / 差量向量同步。' },
+  { target: '#adminKey', title: '通关信印是什么', desc: '这是「中心管理员」的密码。只有审批提案时才需要填；平时传文件、搜知识都不用管它。开发测试阶段可以留空。' },
+  { target: '#nav button[data-module="files"]', title: '五个按钮就是全部功能', desc: '看状态、传文件、搜知识、审批提案、预留扩展。点哪个按钮就进哪个页面，很简单。' },
+  { module: 'files', target: '#module-files h3', title: '怎么上传文件', desc: '三步：①先选一个分类（比如「财务」）；②选电脑里的文件；③点「呈报上传」。勾上「同步到 Dify」，AI 问答就能用这个文件。下面还能改文件的分类、删文件。' },
+  { module: 'search', target: '#module-search h3', title: '怎么搜知识', desc: '输入问题，点「启印求索」。结果里点「勘阅出处」能打开原文件；「热度」就是它被查过多少次，查得越多越靠前。' },
+  { module: 'proposals', target: '#module-proposals h3', title: '怎么审批提案', desc: '点一下标题就能看到提案全文，读完了：同意点「准奏批红」，不同意点「驳回」。' },
+  { module: 'reserved', target: '#module-reserved h4', title: '以后要加的功能', desc: '这三个框是占位：接现场设备、接更多 AI、加快同步速度。现在还没做，以后会加进来。' },
 ];
 let tutorialIndex = 0;
 function tutorialOpen(){ tutorialIndex = 0; $('#tutorialOverlay').classList.remove('hidden'); tutorialRender(); }
 function tutorialSkip(){ $('#tutorialOverlay').classList.add('hidden'); }
-function tutorialStep(d){ tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender(); }
+function tutorialStep(d){
+  if (d > 0 && tutorialIndex >= tutorialSteps.length - 1) { tutorialSkip(); return; }
+  tutorialIndex = Math.max(0, Math.min(tutorialSteps.length - 1, tutorialIndex + d)); tutorialRender();
+}
 function tutorialRender(){
   const st = tutorialSteps[tutorialIndex];
   $('#tutorialStepNo').textContent = '第 ' + (tutorialIndex + 1) + ' / ' + tutorialSteps.length + ' 步';
@@ -354,7 +376,7 @@ function notify(message, type){
 function switchModule(name){
   $$('#nav button').forEach(b => b.classList.toggle('active', b.dataset.module === name));
   $$('.module').forEach(m => m.classList.toggle('hidden', m.id !== 'module-' + name));
-  ({ overview: loadOverview, files: () => {}, search: () => {}, proposals: loadProposals, reserved: () => {} })[name]();
+  ({ overview: loadOverview, files: () => { loadFileList(); }, search: () => {}, proposals: loadProposals, reserved: () => {} })[name]();
 }
 $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (b && b.dataset.module) switchModule(b.dataset.module); });
 
@@ -418,8 +440,7 @@ async function doUpload(btn){
     }).join('');
     if (d.offline) {
       $('#uploadResults').innerHTML += `<div class="text-xs text-cinnabar font-serif">⚠ 中心离线：本次呈报已进入本地离线队列（${(d.results||[]).filter(r=>r.queued_offline).length} 项），联网后自动补同步</div>`;
-    } else if ($('#syncDify').checked) {
-      for (const r of (d.results || [])) {
+    } else if ($('#syncDify').checked) {      for (const r of (d.results || [])) {
         if (!r.error && r.file_id) {
           try {
             const s = await api('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_id: r.file_id }) });
@@ -429,6 +450,7 @@ async function doUpload(btn){
       }
     }
     input.value = '';
+    loadFileList();
   }catch(e){
     $('#uploadResults').innerHTML = '<div class="text-xs text-cinnabar font-serif">❌ ' + esc(e.message) + '</div>';
   }
@@ -441,6 +463,50 @@ async function doIngestById(){
     const s = await api('/api/ingest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_id: id }) });
     notify(`卷册 #${id}：${s.queued ? '已排队，解析后自动接入 Dify' : '已接入 Dify ✓'}`, 'success');
   }catch(e){ notify('同步失败：' + e.message, 'danger'); }
+}
+
+function categoryOptions(cur){
+  const cats = Array.from($('#fileCategoryFilter').options).map(o => o.value).filter(v => v);
+  if (cur && !cats.includes(cur)) cats.unshift(cur);
+  return cats.map(c => `<option value="${esc(c)}" ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('');
+}
+async function loadFileList(){
+  try{
+    const d = await api('/api/files');
+    if (d.offline) { $('#fileListStatus').innerHTML = '<span class="text-cinnabar">' + esc(d.message || '中心离线') + '</span>'; $('#fileListRows').innerHTML = ''; return; }
+    const list = (Array.isArray(d) ? d : (d.items || [])).filter(f => f.status !== 'deleted');
+    $('#fileListStatus').textContent = '共 ' + list.length + ' 册文卷';
+    $('#fileListRows').innerHTML = list.map(f => `
+      <tr class="hover:bg-[#f5eee1]">
+        <td class="py-2 px-2 font-mono text-cinnabar font-bold">#${f.id}</td>
+        <td class="py-2 px-2 font-mono text-sandalwood">${esc(f.path)}</td>
+        <td class="py-2 px-2"><select onchange="editCategory(${f.id}, this.value)" class="bg-[#f7f2e7] border border-[#d2c5b0] text-sandalwood text-[11px] rounded px-2 py-1 font-serif">${categoryOptions(f.category)}</select></td>
+        <td class="py-2 px-2 text-paper-600">${esc(f.status)}${f.alive ? '' : ' <span class="text-cinnabar">(缺失)</span>'}</td>
+        <td class="py-2 px-2 text-right"><button onclick="deleteFile(${f.id},this)" class="px-2 py-1 rounded bg-[#fdf5f5] hover:bg-[#f9e3e3] text-cinnabar text-[11px] font-bold border border-cinnabar/30">删除</button></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="py-6 text-center text-paper-500 font-serif">暂无文卷</td></tr>';
+  }catch(e){ $('#fileListStatus').innerHTML = '<span class="text-cinnabar">' + esc(e.message) + '</span>'; }
+}
+async function editCategory(id, cat){
+  try{
+    await api('/api/files/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category: cat }) });
+    notify('卷册 #' + id + ' 部类已改为 ' + cat, 'success');
+  }catch(e){ notify('修改失败：' + e.message, 'danger'); loadFileList(); }
+}
+async function deleteFile(id, btn){
+  if (!confirm('确定删除卷册 #' + id + '？将清掉它的切片与对象存储。')) return;
+  if (btn) btn.disabled = true;
+  try{
+    await api('/api/files/' + id, { method: 'DELETE' });
+    notify('卷册 #' + id + ' 已删除', 'success');
+    loadFileList();
+  }catch(e){ notify('删除失败：' + e.message, 'danger'); }
+  finally{ if (btn) btn.disabled = false; }
+}
+
+function prettyBody(v){
+  v = String(v == null ? '' : v);
+  try { return JSON.stringify(JSON.parse(v), null, 2); } catch (e) {}
+  return v.replace(/\\n/g, '\n');
 }
 
 function quickFillSearch(q){ $('#searchQuery').value = q; runSearch(); }
@@ -497,7 +563,7 @@ async function loadProposals(){
         </td>
       </tr>
       <tr id="proposal-detail-${i}" class="hidden bg-[#f4ece0]">
-        <td colspan="7" class="p-4"><pre class="p-3 bg-[#f8f4ea] rounded text-sandalwood font-serif text-xs whitespace-pre-wrap leading-relaxed border border-[#e2d8c7]">${esc(p.body || '(无正文)')}</pre></td>
+        <td colspan="7" class="p-4"><pre class="p-3 bg-[#f8f4ea] rounded text-sandalwood font-serif text-xs whitespace-pre-wrap leading-relaxed border border-[#e2d8c7]">${esc(prettyBody(p.body || '(无正文)'))}</pre></td>
       </tr>`).join('') || '<tr><td colspan="7" class="py-6 text-center text-paper-500 font-serif">暂无关章待审</td></tr>';
   }catch(e){
     $('#proposalRows').innerHTML = '<tr><td colspan="7" class="py-6 text-center text-cinnabar font-serif">读取失败：' + esc(e.message) + '（批红需中心管理员信印）</td></tr>';

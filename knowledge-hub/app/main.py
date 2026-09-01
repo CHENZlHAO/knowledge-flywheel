@@ -3,12 +3,12 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db, initialize_database
 from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, RemoteCommand, Alert, RetrievalLog, GapItem
-from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, KnowledgeSearchRequest, PipelineRunRequest, ApiKeyCreate, TokenCreate, RagChatRequest, GapStatusUpdate, ConfigUpdate
+from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, KnowledgeSearchRequest, PipelineRunRequest, ApiKeyCreate, TokenCreate, RagChatRequest, GapStatusUpdate, ConfigUpdate, FileUpdate
 from .services import heartbeat, apply_node_status_event, report_file, queue_file_content_parse, create_task, transition_task, review_proposal, refresh_node_statuses, reconcile_file_liveness, replica_policy_health, create_remote_command, acknowledge_remote_command, claim_next_remote_command, acknowledge_alert, search_knowledge, create_dsh_review_proposal, store_blob, load_blob, list_gap_items, run_gap_summary, update_gap_item_status
 from .dispatcher import executor_health
 from .security import authorize, create_api_key, revoke_api_key, create_token, oidc_status
@@ -233,10 +233,13 @@ def node_files(node_id: str, db: Session = Depends(get_db)):
     ).all()
 
 
-@app.get("/api/v1/pipeline/files", dependencies=[Depends(require_admin)])
-def pipeline_files(db: Session = Depends(get_db)):
+@app.get("/api/v1/pipeline/files", dependencies=[Depends(require_admin_or_node)])
+def pipeline_files(include_dead: bool = False, db: Session = Depends(get_db)):
     """Return recent file records with registration and parse task states."""
-    files = db.scalars(select(FileRecord).order_by(FileRecord.updated_at.desc(), FileRecord.id.desc()).limit(200)).all()
+    query = select(FileRecord).order_by(FileRecord.updated_at.desc(), FileRecord.id.desc()).limit(200)
+    if not include_dead:
+        query = query.where(FileRecord.alive.is_(True))
+    files = db.scalars(query).all()
     output = []
     for record in files:
         register_task = db.scalars(
@@ -281,6 +284,33 @@ def pipeline_files(db: Session = Depends(get_db)):
             "updated_at": record.updated_at,
         })
     return output
+
+
+@app.patch("/api/v1/files/{file_id}", dependencies=[Depends(require_admin_or_node)])
+def file_update(file_id: int, data: FileUpdate, db: Session = Depends(get_db)):
+    """修改文件元数据（当前支持分区 category）；中心/边缘端均可操作。"""
+    record = db.get(FileRecord, file_id)
+    if record is None:
+        raise HTTPException(404, "file not found")
+    record.category = data.category
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@app.delete("/api/v1/files/{file_id}", dependencies=[Depends(require_admin_or_node)])
+def file_delete(file_id: int, db: Session = Depends(get_db)):
+    """删除文件：清理切片/副本/对象存储记录，文件行保留为已删除墓碑。"""
+    record = db.get(FileRecord, file_id)
+    if record is None:
+        raise HTTPException(404, "file not found")
+    db.execute(delete(DocumentChunk).where(DocumentChunk.file_id == file_id))
+    db.execute(delete(FileReplica).where(FileReplica.file_id == file_id))
+    db.execute(delete(BlobObject).where(BlobObject.file_id == file_id))
+    record.alive = False
+    record.status = "deleted"
+    db.commit()
+    return {"deleted": True, "file_id": file_id}
 
 
 @app.get("/api/v1/files/{file_id}/chunks", dependencies=[Depends(require_admin)])
