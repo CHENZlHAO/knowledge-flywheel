@@ -63,6 +63,7 @@ func (w *webServer) start() {
 	mux.HandleFunc("/api/upload", w.handleUpload)
 	mux.HandleFunc("/api/search", w.handleSearch)
 	mux.HandleFunc("/api/ingest", w.handleIngest)
+	mux.HandleFunc("/api/queue", w.handleQueue)
 	mux.HandleFunc("/api/proposals", w.handleProposals)
 	mux.HandleFunc("/api/proposals/", w.handleProposalReview)
 	mux.Handle("/", w.staticHandler())
@@ -149,6 +150,7 @@ func (w *webServer) handleStatus(rw http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	status["watched_files"] = count
+	status["queue_count"] = queueCount(w.cfg.QueueDir)
 	writeJSON(rw, http.StatusOK, status)
 }
 
@@ -175,15 +177,23 @@ func (w *webServer) handleUpload(rw http.ResponseWriter, r *http.Request) {
 	if category == "" {
 		category = "未分类"
 	}
+	syncDify := r.FormValue("sync_dify") == "true"
 
+	// 独立工作台：中心不可达时上传全部进入本地离线队列，联网后自动补同步
+	offline := !centerReachable(r.Context(), w.client, w.cfg)
 	results := make([]map[string]any, 0, len(files))
 	for _, fh := range files {
-		results = append(results, w.uploadOne(r.Context(), fh, category))
+		results = append(results, w.uploadOne(r.Context(), fh, category, offline, syncDify))
 	}
-	writeJSON(rw, http.StatusOK, map[string]any{"results": results})
+	if !offline {
+		if flushed, _ := flushOfflineQueue(w.client, w.cfg); flushed > 0 {
+			fmt.Printf("[queue] web upload flushed %d queued item(s)\n", flushed)
+		}
+	}
+	writeJSON(rw, http.StatusOK, map[string]any{"results": results, "offline": offline})
 }
 
-func (w *webServer) uploadOne(ctx context.Context, fh *multipart.FileHeader, category string) map[string]any {
+func (w *webServer) uploadOne(ctx context.Context, fh *multipart.FileHeader, category string, offline, syncDify bool) map[string]any {
 	res := map[string]any{"name": filepath.Base(fh.Filename)}
 	f, err := fh.Open()
 	if err != nil {
@@ -205,6 +215,19 @@ func (w *webServer) uploadOne(ctx context.Context, fh *multipart.FileHeader, cat
 	res["size"] = len(data)
 	res["sha256"] = hash
 	res["category"] = category
+	if offline {
+		// 中心离线：本地排队，联网后由 agent 循环自动补同步（含 Dify 同步标记）
+		qid, qerr := offlineEnqueue(w.cfg, res["name"].(string), data, hash, category, syncDify)
+		if qerr != nil {
+			res["error"] = "offline queue: " + qerr.Error()
+			return res
+		}
+		res["queued_offline"] = true
+		res["queue_id"] = qid
+		res["sync_dify"] = syncDify
+		res["mode"] = "queued"
+		return res
+	}
 	if err := w.reportAndUpload(ctx, res["name"].(string), data, hash, category, res); err != nil {
 		res["error"] = err.Error()
 	}
@@ -262,6 +285,159 @@ func (w *webServer) reportAndUpload(ctx context.Context, name string, data []byt
 	return nil
 }
 
+// ===================== 离线工作台：本地上传队列 =====================
+// 中心不可达时，上传先落到本地队列目录；agent 循环与每次联网上传后
+// 自动冲刷队列到中心（文本走解析、二进制走对象存储，并可带 Dify 同步标记）。
+
+type queueItem struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Category  string `json:"category"`
+	SHA256    string `json:"sha256"`
+	Size      int64  `json:"size"`
+	SyncDify  bool   `json:"sync_dify"`
+	CreatedAt string `json:"created_at"`
+	DataFile  string `json:"data_file"`
+}
+
+func queueDir(dir string) string {
+	if dir == "" {
+		return "./edge-queue"
+	}
+	return dir
+}
+
+func centerReachable(ctx context.Context, client *http.Client, cfg Config) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(cfg, "/healthz"), nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode < 300
+}
+
+func offlineEnqueue(cfg Config, name string, data []byte, hash, category string, syncDify bool) (string, error) {
+	dir := queueDir(cfg.QueueDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	rb := make([]byte, 4)
+	_, _ = rand.Read(rb)
+	id := time.Now().UTC().Format("20060102T150405") + "-" + hex.EncodeToString(rb)
+	item := queueItem{ID: id, Name: name, Category: category, SHA256: hash, Size: int64(len(data)), SyncDify: syncDify, CreatedAt: time.Now().UTC().Format(time.RFC3339), DataFile: id + ".data"}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".data"), data, 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), payload, 0o644); err != nil {
+		return "", err
+	}
+	fmt.Printf("[audit] offline-queued node=%s name=%s sha256=%s sync_dify=%v\n", cfg.NodeID, name, hash[:16], syncDify)
+	return id, nil
+}
+
+func queueCount(dir string) int {
+	n := 0
+	_ = filepath.Walk(queueDir(dir), func(_ string, info os.FileInfo, err error) error {
+		if err == nil && info != nil && !info.IsDir() && strings.HasSuffix(info.Name(), ".json") {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
+func listQueue(dir string) []map[string]any {
+	out := []map[string]any{}
+	dir = queueDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var it queueItem
+		if json.Unmarshal(raw, &it) != nil {
+			continue
+		}
+		out = append(out, map[string]any{"id": it.ID, "name": it.Name, "category": it.Category, "size": it.Size, "sync_dify": it.SyncDify, "created_at": it.CreatedAt})
+	}
+	return out
+}
+
+// flushOfflineQueue pushes queued uploads to the center. A network error stops
+// the flush (center still down); non-network errors keep the item for retry.
+func flushOfflineQueue(client *http.Client, cfg Config) (int, error) {
+	dir := queueDir(cfg.QueueDir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	flushed := 0
+	w := &webServer{cfg: cfg, client: client}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		jsonPath := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(jsonPath)
+		if err != nil {
+			continue
+		}
+		var it queueItem
+		if json.Unmarshal(raw, &it) != nil {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, it.DataFile))
+		if err != nil {
+			continue
+		}
+		res := map[string]any{"name": it.Name, "size": it.Size, "sha256": it.SHA256, "category": it.Category}
+		if err := w.reportAndUpload(context.Background(), it.Name, data, it.SHA256, it.Category, res); err != nil {
+			return flushed, err // 中心仍不可达或拒收：保留队列待下次重试
+		}
+		fileID, _ := res["file_id"].(int)
+		if it.SyncDify && fileID > 0 {
+			if _, _, err := roundTrip(context.Background(), client, http.MethodPost, endpoint(cfg, fmt.Sprintf("/api/v1/rag/ingest?file_id=%d", fileID)), nil, "X-Node-Key", cfg.NodeAPIKey); err != nil {
+				fmt.Fprintf(os.Stderr, "[queue] dify ingest of %s: %v\n", it.Name, err)
+			}
+		}
+		_ = os.Remove(jsonPath)
+		_ = os.Remove(filepath.Join(dir, it.DataFile))
+		fmt.Printf("[audit] offline-flushed node=%s name=%s file_id=%d\n", cfg.NodeID, it.Name, fileID)
+		flushed++
+	}
+	return flushed, nil
+}
+
+func (w *webServer) handleQueue(rw http.ResponseWriter, r *http.Request) {
+	if !w.authorized(r) {
+		writeJSON(rw, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeJSON(rw, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+		return
+	}
+	writeJSON(rw, http.StatusOK, map[string]any{"items": listQueue(w.cfg.QueueDir), "count": queueCount(w.cfg.QueueDir)})
+}
+
 func (w *webServer) handleCategories(rw http.ResponseWriter, r *http.Request) {
 	if !w.authorized(r) {
 		writeJSON(rw, http.StatusUnauthorized, map[string]any{"error": "unauthorized"})
@@ -269,7 +445,7 @@ func (w *webServer) handleCategories(rw http.ResponseWriter, r *http.Request) {
 	}
 	status, body, err := roundTrip(r.Context(), w.client, http.MethodGet, endpoint(w.cfg, "/api/v1/categories"), nil, "", "")
 	if err != nil {
-		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": "categories: " + err.Error()})
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "categories": []string{"通用", "财务", "人力", "制度"}, "message": "中心离线：使用默认部类"})
 		return
 	}
 	if status >= 300 {
@@ -315,7 +491,10 @@ func (w *webServer) handleSearch(rw http.ResponseWriter, r *http.Request) {
 	}
 	status, body, err := roundTrip(r.Context(), w.client, http.MethodPost, endpoint(w.cfg, "/api/v1/knowledge/search"), payload, "X-Search-Key", w.cfg.SearchAPIKey)
 	if err != nil {
-		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": "search: " + err.Error()})
+		// 中心离线：降级为本地文件名匹配（独立工作台能力）
+		hits := localFilenameSearch(w.cfg.WatchDir, req.Query)
+		fmt.Printf("[audit] search-offline node=%s query=%q hits=%d\n", w.cfg.NodeID, req.Query, len(hits))
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "count": len(hits), "results": hits, "message": "中心离线：已按本地文件名匹配"})
 		return
 	}
 	if status >= 300 {
@@ -326,6 +505,21 @@ func (w *webServer) handleSearch(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 	rw.WriteHeader(status)
 	_, _ = rw.Write(body)
+}
+
+func localFilenameSearch(watchDir, query string) []map[string]any {
+	out := []map[string]any{}
+	q := strings.ToLower(strings.TrimSpace(query))
+	_ = filepath.Walk(watchDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || info.Size() <= 0 {
+			return nil
+		}
+		if strings.Contains(strings.ToLower(info.Name()), q) {
+			out = append(out, map[string]any{"path": path, "name": info.Name(), "size_bytes": info.Size(), "match": "filename"})
+		}
+		return nil
+	})
+	return out
 }
 
 func (w *webServer) handleIngest(rw http.ResponseWriter, r *http.Request) {
@@ -347,7 +541,7 @@ func (w *webServer) handleIngest(rw http.ResponseWriter, r *http.Request) {
 	// 代理到中心端：管理员/节点鉴权，边缘端用 node key；已解析立即接入，未解析排队
 	status, body, err := roundTrip(r.Context(), w.client, http.MethodPost, endpoint(w.cfg, fmt.Sprintf("/api/v1/rag/ingest?file_id=%d", req.FileID)), nil, "X-Node-Key", w.cfg.NodeAPIKey)
 	if err != nil {
-		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": "ingest: " + err.Error()})
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "blocked": true, "message": "中心离线：Dify 同步不可用，文件需先联网送达中心"})
 		return
 	}
 	if status >= 300 {
@@ -372,7 +566,7 @@ func (w *webServer) handleProposals(rw http.ResponseWriter, r *http.Request) {
 	// 代理中心端提案列表；X-Admin-Key 由浏览器透传（审批操作需要中心管理员权限）
 	status, body, err := roundTrip(r.Context(), w.client, http.MethodGet, endpoint(w.cfg, "/api/v1/proposals"), nil, "X-Admin-Key", r.Header.Get("X-Admin-Key"))
 	if err != nil {
-		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": "proposals: " + err.Error()})
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "message": "中心离线：提案审阅不可用"})
 		return
 	}
 	if status >= 300 {
@@ -416,7 +610,7 @@ func (w *webServer) handleProposalReview(rw http.ResponseWriter, r *http.Request
 	}
 	status, body, err := doRoundTrip(w.client, req)
 	if err != nil {
-		writeJSON(rw, http.StatusBadGateway, map[string]any{"error": "review: " + err.Error()})
+		writeJSON(rw, http.StatusOK, map[string]any{"offline": true, "message": "中心离线：批红不可用"})
 		return
 	}
 	if status >= 300 {

@@ -34,6 +34,7 @@ type Config struct {
 	CenterURL         string
 	NodeAPIKey        string
 	WatchDir          string
+	QueueDir          string
 	AgentVersion      string
 	Interval          time.Duration
 	CommandPoll       time.Duration
@@ -97,6 +98,7 @@ func main() {
 	flag.StringVar(&cfg.CenterURL, "center-url", "http://127.0.0.1:8000", "knowledge hub URL")
 	flag.StringVar(&cfg.NodeAPIKey, "node-api-key", "", "knowledge hub node API key")
 	flag.StringVar(&cfg.WatchDir, "watch-dir", ".", "directory to report")
+	flag.StringVar(&cfg.QueueDir, "queue-dir", "./edge-queue", "offline upload queue directory (synced to center when it returns)")
 	flag.StringVar(&cfg.AgentVersion, "version", agentVersion, "agent version")
 	flag.DurationVar(&cfg.Interval, "interval", 30*time.Second, "report interval")
 	flag.DurationVar(&cfg.CommandPoll, "command-poll", 15*time.Second, "remote command poll interval; 0 disables polling")
@@ -165,6 +167,11 @@ func runAgentLoop(cfg Config, stop <-chan struct{}) error {
 	if err := runOnceWithMQTT(ctx, client, mqttClient, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
+	if flushed, err := flushOfflineQueue(client, cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "offline queue:", err)
+	} else if flushed > 0 {
+		fmt.Printf("[queue] synced %d offline upload(s) to center\n", flushed)
+	}
 	if cfg.Once {
 		return nil
 	}
@@ -184,6 +191,11 @@ func runAgentLoop(cfg Config, stop <-chan struct{}) error {
 		case <-ticker.C:
 			if err := runOnceWithMQTT(ctx, client, mqttClient, cfg); err != nil {
 				fmt.Fprintln(os.Stderr, err)
+			}
+			if flushed, err := flushOfflineQueue(client, cfg); err != nil {
+				fmt.Fprintln(os.Stderr, "offline queue:", err)
+			} else if flushed > 0 {
+				fmt.Printf("[queue] synced %d offline upload(s) to center\n", flushed)
 			}
 		}
 	}
