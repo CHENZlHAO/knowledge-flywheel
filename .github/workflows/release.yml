@@ -4,6 +4,14 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version/tag to publish (e.g. v0.2.2)"
+        required: false
+        default: ""
+
+env:
+  REF_NAME: ${{ inputs.version || github.ref_name }}
 
 permissions:
   contents: write
@@ -29,7 +37,7 @@ jobs:
           cd knowledge-edge-agent
           EXT="${{ matrix.goos == 'windows' && '.exe' || '' }}"
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags "-s -w -X main.agentVersion=${GITHUB_REF_NAME}" \
+            go build -trimpath -ldflags "-s -w -X main.agentVersion=${REF_NAME}" \
             -o "knowledge-edge-agent-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" .
       - uses: actions/upload-artifact@v4
         with:
@@ -92,13 +100,13 @@ jobs:
           find dist -type f -exec cp {} /tmp/release/ \;
           chmod +x /tmp/release/knowledge-* || true
           ls -lh /tmp/release/
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+          if gh release view "${REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             # Release already exists (e.g. created manually): attach the binaries to it.
-            gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber /tmp/release/knowledge-*
+            gh release upload "${REF_NAME}" --repo "${GITHUB_REPOSITORY}" --clobber /tmp/release/knowledge-*
           else
-            gh release create "${GITHUB_REF_NAME}" \
+            gh release create "${REF_NAME}" \
               --repo "${GITHUB_REPOSITORY}" \
-              --title "${GITHUB_REF_NAME}" \
+              --title "${REF_NAME}" \
               --notes "开箱即用版本：中心端 Windows EXE（knowledge-center.exe，免 Docker）与 macOS 二进制（knowledge-center-darwin-arm64，Apple Silicon，终端运行）+ 边缘端 Windows/macOS 二进制。中心运行后打开 http://127.0.0.1:8000/ ；macOS 二进制下载后需 chmod +x 并执行 xattr -d com.apple.quarantine；边缘按 README 配置中心 IP 后运行。" \
               /tmp/release/knowledge-*
           fi
