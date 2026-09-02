@@ -1,8 +1,16 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 打包流水线会在 PyInstaller 前生成 app/_version.py；源码运行时回退为 "dev"。
+try:
+    from ._version import APP_VERSION
+except Exception:  # pragma: no cover
+    APP_VERSION = "dev"
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
+    app_version: str = APP_VERSION
+    data_dir: str = ""
     database_url: str = "sqlite:///./dev.db"
     redis_url: str = "redis://localhost:6379/0"
     task_execution_mode: str = "poll"

@@ -669,6 +669,14 @@ code {
     <div id="dshStatus" class="muted"></div>
   </div>
   <div class="card">
+    <h3>软件更新（从 GitHub Release 一键更新，数据保留）</h3>
+    <div class="row">
+      <div id="updateMeta" class="muted" style="flex:1">读取中…</div>
+      <button id="updateBtn" onclick="applyUpdate(this)" disabled>一键更新</button>
+    </div>
+    <div id="updateStatus" class="muted" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
     <h3>API 密钥与 RBAC</h3>
     <div class="row">
       <select id="keyRole" style="flex:0 0 160px">
@@ -751,6 +759,14 @@ code {
       <button class="ghost" onclick="quickChat(this)">提问</button>
     </div>
     <div id="cfgChatResult" class="muted" style="white-space:normal;line-height:1.7"></div>
+  </div>
+  <div class="card">
+    <h3>集成凭证 / API 清单（自动读取，无需手填）</h3>
+    <div class="row">
+      <button onclick="loadCredentials()">刷新</button>
+      <button class="ghost" onclick="copyCredentials()">复制全部</button>
+    </div>
+    <div id="credentialsBox" class="muted" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;margin-top:10px">读取中…</div>
   </div>
 </section>
 
@@ -912,7 +928,30 @@ async function loadGaps(){
 async function gapAction(id,status,btn){btn.disabled=true;try{await apiJSON(`/api/v1/gaps/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});await loadGaps()}catch(e){alert(`操作失败：${e.message}`)}finally{btn.disabled=false}}
 async function runGapSummarize(btn){btn.disabled=true;try{const d=await apiJSON('/api/v1/gaps/summarize',{method:'POST'});$('#gapMeta').textContent=`汇总完成：新增/更新 ${d.updated} 项`;await loadGaps()}catch(e){$('#gapMeta').textContent='汇总失败：'+e.message}finally{btn.disabled=false}}
 
+async function loadCredentials(){
+  try{
+    const d=await apiJSON('/api/v1/admin/credentials');
+    const lines=[];
+    lines.push('== 对外 KEY（掩码；完整值在 .env / 密钥管理） ==');
+    for(const [k,v] of Object.entries(d.keys||{})) lines.push(`${k}=${v||'(未设置)'}`);
+    lines.push('');
+    lines.push('== Dify 集成（已随仓库集成，自动读取） ==');
+    lines.push(`base_url=${d.dify.base_url}`);
+    lines.push(`api_key=${d.dify.api_key||'(未设置)'}`);
+    lines.push(`dataset_id=${d.dify.dataset_id||'(未设置)'}`);
+    lines.push('');
+    lines.push('== API 端点 ==');
+    for(const e of d.endpoints||[]) lines.push(`${String(e.method).padEnd(7)} ${e.path}${e.key?'  ['+e.key+']':''}  ${e.name}`);
+    const txt=lines.join('\n');
+    $('#credentialsBox').textContent=txt;
+    window._credText=txt;
+  }catch(e){$('#credentialsBox').textContent='读取失败：'+esc(e.message)}
+}
+async function copyCredentials(){
+  try{await navigator.clipboard.writeText(window._credText||'');alert('已复制')}catch(e){alert('复制失败：'+esc(e.message))}
+}
 async function loadConfig(){
+  loadCredentials();
   try{
     const d=await apiJSON('/api/v1/admin/config');
     const eff=d.effective||{};
@@ -973,7 +1012,27 @@ async function loadReplicas(){
 }
 async function retryRepair(id,btn){btn.disabled=true;try{const r=await api(`/api/v1/replica-repairs/${id}/retry`,{method:'POST'});if(!r.ok)throw new Error((await r.json()).detail);await loadReplicas()}catch(e){alert(`重试失败：${e.message}`)}finally{btn.disabled=false}}
 
+async function loadUpdate(){
+  try{
+    const d=await apiJSON('/api/v1/admin/update/check');
+    $('#updateMeta').textContent=d.ok?`当前 ${d.current_version} · 最新 ${d.latest_version} · 平台产物 ${d.platform_asset||'无'}${d.update_available?' · 有更新可用':''}`:`检查失败：${esc(d.error||'')}`;
+    $('#updateBtn').disabled=!(d.ok&&d.update_available);
+  }catch(e){$('#updateMeta').textContent='检查失败：'+esc(e.message);$('#updateBtn').disabled=true}
+}
+async function applyUpdate(btn){
+  btn.disabled=true;$('#updateStatus').textContent='正在后台启动更新…';
+  try{await apiJSON('/api/v1/admin/update',{method:'POST'})}catch(e){$('#updateStatus').textContent='启动失败：'+esc(e.message);btn.disabled=false;return}
+  const poll=setInterval(async()=>{
+    try{
+      const s=await apiJSON('/api/v1/admin/update/status');
+      $('#updateStatus').textContent=esc(s.message||s.status||'');
+      if(s.status==='restarting'){clearInterval(poll);$('#updateStatus').textContent='更新完成，程序即将重启，页面会短暂失联，稍候刷新即可。'}
+      if(s.status==='failed'||s.status==='up_to_date'){clearInterval(poll);btn.disabled=false}
+    }catch(e){clearInterval(poll)}
+  },2500);
+}
 async function loadSystem(){
+  loadUpdate();
   try{
     const [keys,backups,blobs]=await Promise.all([apiJSON('/api/v1/admin/keys'),apiJSON('/api/v1/admin/backup/status'),apiJSON('/api/v1/blob-objects')]);
     $('#keyRows').innerHTML=keys.map(x=>`<tr><td><code>${esc(x.key_id)}</code></td><td><span class="badge">${esc(x.role)}</span></td><td>${esc(x.label||'-')}</td><td>${x.active?'<span class="ok">有效</span>':'<span class="muted">已撤销</span>'}</td><td>${x.last_used_at?fmt(x.last_used_at):'-'}</td><td>${x.expires_at?fmt(x.expires_at):'-'}</td><td>${x.active?`<button class="small danger" onclick="revokeKey('${esc(x.key_id)}',this)">撤销</button>`:'-'}</td></tr>`).join('');

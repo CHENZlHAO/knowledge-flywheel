@@ -13,13 +13,32 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
+
+
+def _arg_value(name: str) -> str:
+    try:
+        idx = sys.argv.index(f"--{name}")
+        return sys.argv[idx + 1]
+    except (ValueError, IndexError):
+        return ""
+
 
 # Force offline-safe first-generation defaults BEFORE importing app.config, so a
 # stray production .env cannot point the standalone build at unreachable services.
 os.environ.setdefault("APP_ENV", "development")
+# 数据与程序分离：--data-dir <目录> 或 DATA_DIR 把数据库/对象存储/备份固定到数据目录，
+# 自更新只替换可执行文件，数据目录原样保留。
+_DATA_DIR = os.environ.get("DATA_DIR") or _arg_value("data-dir")
+if _DATA_DIR:
+    os.environ.setdefault("DATA_DIR", _DATA_DIR)
+    os.environ.setdefault("DATABASE_URL", f"sqlite:///{(Path(_DATA_DIR) / 'knowledge-hub.db').as_posix()}")
+    os.environ.setdefault("STORAGE_ROOT", (Path(_DATA_DIR) / "storage").as_posix())
+    os.environ.setdefault("BACKUP_DIR", (Path(_DATA_DIR) / "backups").as_posix())
 os.environ.setdefault("DATABASE_URL", "sqlite:///./knowledge-hub.db")
 os.environ.setdefault("STORAGE_ROOT", "./storage")
 os.environ.setdefault("BACKUP_DIR", "./backups")

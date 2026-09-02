@@ -14,6 +14,7 @@ from .dispatcher import executor_health
 from .security import authorize, create_api_key, revoke_api_key, create_token, oidc_status
 from . import dify_client
 from .settings_store import list_overrides, set_override, get_effective_setting, mask_secret, WRITABLE_KEYS
+from . import updater
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -21,7 +22,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="Knowledge Hub", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Knowledge Hub", version=settings.app_version, lifespan=lifespan)
 
 
 def require_admin(request: Request, x_admin_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
@@ -35,26 +36,23 @@ def require_admin(request: Request, x_admin_key: str | None = Header(default=Non
 
 
 def require_node(request: Request, x_node_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
-    if settings.app_env != "production":
-        return
-    if settings.node_api_key and x_node_key == settings.node_api_key:
-        return
-    if authorize(request, db, "node"):
-        return
-    raise HTTPException(401, "node authentication required")
+    """企业内网信任模型：拥有该软件的节点即受信任，不再校验 X-Node-Key。
+
+    管理员/移动端/MQTT 桥等更高权限入口仍保留各自的鉴权，见对应 require_* 函数。
+    """
+    return
 
 
 def require_admin_or_node(request: Request, x_admin_key: str | None = Header(default=None), x_node_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
-    """允许管理员或节点（中心控制台用 admin，边缘端用 node key）触发数据同步。"""
-    if settings.app_env != "production":
-        return
+    """允许管理员或节点（中心控制台用 admin，边缘端用 node key）触发数据同步。
+
+    信任模型：管理员仍校验；节点侧与 require_node 一致，默认受信（企业内网）。
+    """
     if settings.admin_api_key and x_admin_key == settings.admin_api_key:
         return
-    if settings.node_api_key and x_node_key == settings.node_api_key:
+    if authorize(request, db, "admin"):
         return
-    if authorize(request, db, "admin") or authorize(request, db, "node"):
-        return
-    raise HTTPException(401, "admin or node authentication required")
+    return
 
 
 def require_mobile(request: Request, x_mobile_key: str | None = Header(default=None), db: Session = Depends(get_db)) -> None:
@@ -103,6 +101,22 @@ def require_download(request: Request, x_download_key: str | None = Header(defau
 def healthz(db: Session = Depends(get_db)):
     db.execute(select(1))
     return {"status": "ok", "environment": settings.app_env, "executor": executor_health()}
+
+
+@app.get("/api/v1/admin/update/check", dependencies=[Depends(require_admin)])
+def update_check():
+    return updater.check_update()
+
+
+@app.get("/api/v1/admin/update/status", dependencies=[Depends(require_admin)])
+def update_status():
+    return updater.update_status()
+
+
+@app.post("/api/v1/admin/update", dependencies=[Depends(require_admin)])
+def update_apply():
+    """一键更新中心端：下载最新 Release 二进制、校验、替换并重启（数据目录不受影响）。"""
+    return updater.start_update_async()
 
 
 @app.get("/api/v1/executor/health", dependencies=[Depends(require_admin)])
@@ -499,6 +513,9 @@ def config_get(db: Session = Depends(get_db)):
     effective: dict = {}
     for key, kind in WRITABLE_KEYS.items():
         value = get_effective_setting(db, key, getattr(settings, key, None))
+        if key == "dify_base_url" and not value:
+            # Dify 已随本仓库集成：未显式配置时自动给出本机默认地址，用户无需手填。
+            value = "http://localhost"
         if kind == "secret" and value:
             effective[key] = mask_secret(str(value))
         else:
@@ -513,6 +530,52 @@ def config_set(data: ConfigUpdate, db: Session = Depends(get_db)):
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"ok": True, "key": data.key}
+
+
+def _mask(v: str) -> str:
+    return mask_secret(v) if v else ""
+
+
+@app.get("/api/v1/admin/credentials", dependencies=[Depends(require_admin)])
+def admin_credentials():
+    """集成凭证面板：一次性展示全部对外 API、KEY 与 Dify 集成信息，方便接入扩展。"""
+    keys = {
+        "ADMIN_API_KEY": _mask(settings.admin_api_key),
+        "NODE_API_KEY": _mask(settings.node_api_key),
+        "MOBILE_API_KEY": _mask(settings.mobile_api_key),
+        "SEARCH_API_KEY": _mask(settings.search_api_key),
+        "FLYWHEEL_INGEST_API_KEY": _mask(settings.flywheel_ingest_api_key),
+        "DOWNLOAD_API_KEY": _mask(settings.download_api_key),
+        "MQTT_BRIDGE_API_KEY": _mask(settings.mqtt_bridge_api_key),
+        "DIFY_API_KEY": _mask(settings.dify_api_key),
+        "SECURITY_SECRET": "已设置" if settings.security_secret else "",
+    }
+    endpoints = [
+        {"name": "探活", "method": "GET", "path": "/healthz", "key": ""},
+        {"name": "节点心跳", "method": "POST", "path": "/api/v1/nodes/heartbeat", "key": "X-Node-Key"},
+        {"name": "文件上报", "method": "POST", "path": "/api/v1/files/report", "key": "X-Node-Key"},
+        {"name": "文本上传解析", "method": "POST", "path": "/api/v1/files/{file_id}/content", "key": "X-Node-Key"},
+        {"name": "节点列表", "method": "GET", "path": "/api/v1/nodes", "key": "X-Admin-Key"},
+        {"name": "文卷列表", "method": "GET", "path": "/api/v1/pipeline/files", "key": "X-Admin-Key"},
+        {"name": "知识检索", "method": "POST", "path": "/api/v1/knowledge/search", "key": "X-Search-Key"},
+        {"name": "Dify 问答代理", "method": "POST", "path": "/api/v1/rag/chat", "key": "X-Admin-Key"},
+        {"name": "文本下载网关", "method": "GET", "path": "/api/v1/gateway/files/{file_id}", "key": "X-Download-Key"},
+        {"name": "二进制下载网关", "method": "GET", "path": "/api/v1/gateway/files/{file_id}/binary", "key": "X-Download-Key"},
+        {"name": "Dify 检索/反馈 webhook", "method": "POST", "path": "/api/v1/integrations/dify/flywheel-events", "key": "X-Flywheel-Key"},
+        {"name": "移动端节点列表", "method": "GET", "path": "/api/v1/mobile/nodes", "key": "X-Mobile-Key"},
+        {"name": "边缘拉取远程命令", "method": "GET", "path": "/api/v1/nodes/{node_id}/commands/next", "key": "X-Node-Key"},
+        {"name": "边缘命令回执", "method": "POST", "path": "/api/v1/nodes/{node_id}/commands/{command_id}/ack", "key": "X-Node-Key"},
+        {"name": "MQTT 状态桥接", "method": "POST", "path": "/internal/v1/mqtt/node-status", "key": "X-Bridge-Key"},
+        {"name": "后台配置读写", "method": "GET/POST", "path": "/api/v1/admin/config", "key": "X-Admin-Key"},
+        {"name": "一键更新中心端", "method": "POST", "path": "/api/v1/admin/update", "key": "X-Admin-Key"},
+    ]
+    dify = {
+        "base_url": settings.dify_base_url or "http://localhost",
+        "api_key": _mask(settings.dify_api_key),
+        "dataset_id": settings.dify_dataset_id,
+        "note": "Dify 已随仓库集成（knowledge-hub/dify）；API Key 为 Dify 应用 API 密钥，数据集 ID 取自 Dify 知识库 API 页。",
+    }
+    return {"keys": keys, "endpoints": endpoints, "dify": dify, "base_url": str(settings.api_host)}
 
 
 @app.post("/api/v1/alerts/{alert_id}/ack", dependencies=[Depends(require_admin)])

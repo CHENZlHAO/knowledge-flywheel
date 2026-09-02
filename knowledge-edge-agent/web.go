@@ -59,6 +59,8 @@ func (w *webServer) start() {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", w.handleStatus)
+	mux.HandleFunc("/api/update/check", w.handleUpdateCheck)
+	mux.HandleFunc("/api/update", w.handleUpdateApply)
 	mux.HandleFunc("/api/categories", w.handleCategories)
 	mux.HandleFunc("/api/upload", w.handleUpload)
 	mux.HandleFunc("/api/search", w.handleSearch)
@@ -74,7 +76,7 @@ func (w *webServer) start() {
 		Addr:         w.cfg.WebListen,
 		Handler:      w.securityHeaders(mux),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		WriteTimeout: 10 * time.Minute,
 	}
 	fmt.Printf("边缘控制台: http://%s/  访问令牌: %s\n", w.cfg.WebListen, w.token)
 	go func() {

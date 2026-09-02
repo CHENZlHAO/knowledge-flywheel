@@ -56,6 +56,8 @@ Example:
 .\knowledge-edge-agent.exe --node-id=pc-001 --center-url=http://hub.local:8000 --watch-dir=C:\Knowledge --node-api-key=$env:NODE_API_KEY
 ```
 
+> `--node-api-key` 在当前企业内网信任模型下已非必需（中心不再校验 X-Node-Key）；保留该参数仅为兼容旧配置。
+
 固定副本节点额外添加 `--is-replica`，且中心 `.env` 的 `REPLICA_NODE_IDS` 必须包含同一个稳定节点 ID：
 
 ```powershell

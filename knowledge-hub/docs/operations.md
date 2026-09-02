@@ -6,6 +6,7 @@
 2. Enable MQTT TLS on 8883, per-node credentials, ACLs, and certificate rotation. Generate the CA and bridge certificate with `scripts/generate-mqtt-certs.sh`; generate each Agent certificate with `scripts/generate-mqtt-node-cert.sh <node-id>`, then provision the same username in EMQX with `EMQX_ADMIN_PASSWORD=<dashboard-password> scripts/provision-mqtt-user.sh <node-id> <strong-password>`. The provisioning script uses the EMQX 5.8 REST API; it does not depend on `emqx ctl users`. Start the secure overlay with `docker compose -f docker-compose.yml -f docker-compose.mqtt-tls.yml up -d --build`. The overlay intentionally fails fast unless `MQTT_PASSWORD` and `MQTT_BRIDGE_API_KEY` are set.
 3. Put the API behind HTTPS and SSO with least-privilege RBAC and MFA for administrators.
    The baseline API also supports `ADMIN_API_KEY` and `NODE_API_KEY` as a minimum bootstrap guard; set both in production.
+   **信任模型（企业内网）**：`X-Node-Key` 已不再校验——拥有该软件的边缘节点默认受信；管理员、移动端、MQTT 桥、搜索、下载、飞轮回调仍保留各自密钥。若需要把节点也纳入密钥校验，可恢复 `require_node` 中的校验逻辑。
 4. Configure PostgreSQL and replica-store backups. Target and document RPO/RTO; perform a restore drill.
 5. Set log retention, audit-log export, metrics scraping, and alert routing.
 6. Test Windows edge installation, signed binary upgrades, antivirus exclusions, and rollback.
@@ -81,6 +82,17 @@
 ### Windows Agent service
 
 - Build with `scripts/build-all.sh` (or `knowledge-edge-agent/scripts/windows/build-windows.bat`), sign with a trusted certificate, and install the native service with `install-service.bat` (or `-service install`). See `knowledge-edge-agent/BUILD-WINDOWS.md`.
+
+## Self-update (一键更新，数据保留)
+
+- 中心端：控制台「系统与安全 → 软件更新」调用 `POST /api/v1/admin/update`；边缘端：控制台「边缘经纬设定 → 软件更新」调用 `POST /api/update`。
+- 更新流程只替换可执行文件（新文件先落到 `<exe>.next`，校验 SHA-256 后原子替换，旧文件保留为 `.prev` 可回滚），数据库 / storage / backups / 边缘 queue 等数据目录原样保留。
+- 中心端建议用 `--data-dir <目录>`（或 `DATA_DIR`）把 `knowledge-hub.db`、`storage/`、`backups/` 固定到独立数据目录，实现程序与数据物理分离。
+- 发布侧：打 `v*` tag 触发 CI 构建并挂到 GitHub Release；边缘端另有 `BUILD-WINDOWS.md` 中描述的 update manifest 契约，供外部批量升级系统使用。
+
+## Remote access (非局域网)
+
+见 `docs/remote-access.md`：Tailscale/ZeroTier 内网穿透（推荐）、公网 IP + 端口映射 + 反向代理 TLS、VPS/云主机、frp 等方案，以及把 `--center-url` 指向 overlay 地址的配置示例。
 
 ## Host acceptance check
 

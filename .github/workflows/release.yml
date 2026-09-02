@@ -74,6 +74,7 @@ jobs:
           cd knowledge-hub
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
+          printf 'APP_VERSION = "%s"\n' "${{ env.REF_NAME }}" > app/_version.py
           pyinstaller --onefile --name knowledge-center --add-data "app/console.html${{ matrix.sep }}app" standalone_center.py
           if [ "${{ matrix.src }}" != "${{ matrix.artifact }}" ]; then
             mv "dist/${{ matrix.src }}" "dist/${{ matrix.artifact }}"
