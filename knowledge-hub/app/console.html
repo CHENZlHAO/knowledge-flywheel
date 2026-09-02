@@ -564,6 +564,14 @@ code {
     </div>
     <div id="fileDetail" class="muted" style="margin-top:14px"></div>
   </div>
+  <div class="card">
+    <h3>分类管理（增删改分类文件夹）</h3>
+    <div class="row">
+      <input id="newCategory" placeholder="新分类名">
+      <button onclick="addCategory(this)">添加分类</button>
+    </div>
+    <div id="categoryManage" class="muted" style="margin-top:10px"></div>
+  </div>
 </section>
 
 <section id="module-search" class="module">
@@ -865,7 +873,26 @@ async function loadCategories(){
     const opts=(c)=>c.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
     $('#fileCategoryFilter').innerHTML='<option value="">全部分区</option>'+opts(d.categories||[]);
     $('#searchCat').innerHTML='<option value="">全部分区</option>'+opts(d.categories||[]);
-  }catch(e){}
+    $('#categoryManage').innerHTML=(d.categories||[]).map(c=>`<div class="row"><span class="badge">${esc(c)}</span><span class="muted" style="flex:0 0 auto">${(d.counts&&d.counts[c])||0} 个文件</span><button class="small ghost" data-name="${esc(c)}" onclick="renameCategory(this)">重命名</button><button class="small danger" data-name="${esc(c)}" onclick="deleteCategory(this)">删除</button></div>`).join('')||'<div class="muted">暂无分类</div>';
+  }catch(e){$('#categoryManage').innerHTML=`<span class="danger">读取失败：${esc(e.message)}</span>`}
+}
+async function addCategory(btn){
+  const name=$('#newCategory').value.trim();if(!name){alert('请输入分类名');return}
+  btn.disabled=true;
+  try{await apiJSON('/api/v1/admin/categories',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});$('#newCategory').value='';await loadCategories();await loadFiles()}
+  catch(e){alert('添加失败：'+e.message)}finally{btn.disabled=false}
+}
+async function renameCategory(btn){
+  const old=btn.dataset.name;const nn=prompt('重命名为：',old);if(!nn||nn.trim()===old)return;
+  btn.disabled=true;
+  try{await apiJSON(`/api/v1/admin/categories/${encodeURIComponent(old)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_name:nn.trim()})});await loadCategories();await loadFiles()}
+  catch(e){alert('重命名失败：'+e.message)}finally{btn.disabled=false}
+}
+async function deleteCategory(btn){
+  const name=btn.dataset.name;if(!confirm(`删除分类「${name}」？其下文件将移到「未分类」。`))return;
+  btn.disabled=true;
+  try{await apiJSON(`/api/v1/admin/categories/${encodeURIComponent(name)}`,{method:'DELETE'});await loadCategories();await loadFiles()}
+  catch(e){alert('删除失败：'+e.message)}finally{btn.disabled=false}
 }
 
 function renderAlerts(alerts,el){

@@ -3,12 +3,12 @@ import json
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from .config import settings
 from .db import get_db, initialize_database
 from .models import Node, FileRecord, FileReplica, DocumentChunk, BlobObject, Task, Proposal, RemoteCommand, Alert, RetrievalLog, GapItem
-from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, KnowledgeSearchRequest, PipelineRunRequest, ApiKeyCreate, TokenCreate, RagChatRequest, GapStatusUpdate, ConfigUpdate, FileUpdate
+from .schemas import NodeHeartbeat, NodeStatusEvent, FileReport, FileContentUpload, TaskCreate, ProposalCreate, ProposalReview, MobileCommandCreate, MobileCommandAck, KnowledgeSearchRequest, PipelineRunRequest, ApiKeyCreate, TokenCreate, RagChatRequest, GapStatusUpdate, ConfigUpdate, FileUpdate, CategoryCreate, CategoryRename
 from .services import heartbeat, apply_node_status_event, report_file, queue_file_content_parse, create_task, transition_task, review_proposal, refresh_node_statuses, reconcile_file_liveness, replica_policy_health, create_remote_command, acknowledge_remote_command, claim_next_remote_command, acknowledge_alert, search_knowledge, create_dsh_review_proposal, store_blob, load_blob, list_gap_items, run_gap_summary, update_gap_item_status
 from .dispatcher import executor_health
 from .security import authorize, create_api_key, revoke_api_key, create_token, oidc_status
@@ -184,10 +184,27 @@ def file_summary(db: Session = Depends(get_db)):
     return {"total": total, "missing": missing, "healthy_rate": round((total - missing) / total, 4) if total else 1}
 
 
+def _effective_categories(db: Session) -> list[str]:
+    raw = get_effective_setting(db, "knowledge_categories", settings.knowledge_categories) or ""
+    return [c.strip() for c in raw.split(",") if c.strip()]
+
+
+def _save_categories(db: Session, categories: list[str]) -> None:
+    # 去重并保留顺序；始终至少保留「未分类」作为兜底。
+    cats = list(dict.fromkeys(c.strip() for c in categories if c and c.strip()))
+    if "未分类" not in cats:
+        cats.insert(0, "未分类")
+    set_override(db, "knowledge_categories", ",".join(cats))
+
+
+def _category_name_ok(name: str) -> bool:
+    return bool(name and name.strip()) and "," not in name
+
+
 @app.get("/api/v1/categories")
 def category_list(db: Session = Depends(get_db)):
     """Host-defined knowledge partitions merged with partitions already present in the index."""
-    configured = [c.strip() for c in settings.knowledge_categories.split(",") if c.strip()]
+    configured = _effective_categories(db)
     rows = db.execute(
         select(FileRecord.category, func.count(FileRecord.id))
         .where(FileRecord.alive.is_(True))
@@ -196,6 +213,52 @@ def category_list(db: Session = Depends(get_db)):
     counts = {cat or "未分类": n for cat, n in rows}
     merged = list(dict.fromkeys([*configured, *counts.keys()]))
     return {"categories": merged, "counts": counts, "default": configured[0] if configured else "未分类"}
+
+
+@app.get("/api/v1/admin/categories", dependencies=[Depends(require_admin)])
+def admin_category_list(db: Session = Depends(get_db)):
+    return category_list(db)
+
+
+@app.post("/api/v1/admin/categories", dependencies=[Depends(require_admin)])
+def category_add(data: CategoryCreate, db: Session = Depends(get_db)):
+    name = data.name.strip()
+    if not _category_name_ok(name):
+        raise HTTPException(400, "分类名不能为空，且不能包含逗号")
+    cats = _effective_categories(db)
+    if name not in cats:
+        cats.append(name)
+        _save_categories(db, cats)
+    return {"categories": _effective_categories(db)}
+
+
+@app.patch("/api/v1/admin/categories/{name}", dependencies=[Depends(require_admin)])
+def category_rename(name: str, data: CategoryRename, db: Session = Depends(get_db)):
+    new_name = data.new_name.strip()
+    if not _category_name_ok(new_name):
+        raise HTTPException(400, "分类名不能为空，且不能包含逗号")
+    cats = _effective_categories(db)
+    # 移动该分类下所有存活/墓碑文件到新分类名
+    db.execute(update(FileRecord).where(FileRecord.category == name).values(category=new_name))
+    cats = [new_name if c == name else c for c in cats]
+    if new_name not in cats:
+        cats.append(new_name)
+    _save_categories(db, cats)  # 内部 commit，同时落库文件更新
+    return {"categories": _effective_categories(db), "renamed": name, "to": new_name}
+
+
+@app.delete("/api/v1/admin/categories/{name}", dependencies=[Depends(require_admin)])
+def category_delete(name: str, fallback: str = "未分类", db: Session = Depends(get_db)):
+    if name == "未分类":
+        raise HTTPException(409, "「未分类」是兜底分类，不能删除")
+    fb = (fallback or "未分类").strip()
+    if fb == name:
+        fb = "未分类"
+    cats = _effective_categories(db)
+    db.execute(update(FileRecord).where(FileRecord.category == name).values(category=fb))
+    cats = [c for c in cats if c != name]
+    _save_categories(db, cats)  # 内部 commit，同时落库文件迁移
+    return {"categories": _effective_categories(db), "moved_to": fb}
 
 
 @app.post("/api/v1/reconciliation/files", dependencies=[Depends(require_admin)])

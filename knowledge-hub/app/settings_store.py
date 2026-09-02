@@ -17,6 +17,7 @@ WRITABLE_KEYS: dict[str, str] = {
     "boost_enabled": "bool",
     "boost_weight": "float",
     "gap_summary_interval_hours": "float",
+    "knowledge_categories": "str",
 }
 
 SECRET_KEYS = {"dify_api_key"}
