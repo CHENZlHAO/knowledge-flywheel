@@ -19,6 +19,7 @@ backups/
 # Go / Windows build artifacts
 *.exe
 dist/
+/knowledge-edge-agent/knowledge-edge-agent
 
 # PyInstaller build artifacts
 build/
